@@ -910,13 +910,14 @@ async function renderLeaderboard(){
     '</select></div>';
 
   html += '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
-    '<th>#</th><th>Customer</th><th>Type</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Next renewal</th><th>Last win Q</th>'+
-    '<th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th><th>Tier</th>'+
+    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Next renewal</th><th>Last win Q</th>'+
+    '<th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r, i){
     const typeKey = r.info.customerType;
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
-    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td>'+
+    const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>';
+    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks||'—')+'</td>'+
       '<td class="num">'+r.cs.count+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
@@ -928,8 +929,7 @@ async function renderLeaderboard(){
       '<td class="num">'+(r.info.survey1SentDate||'—')+'</td>'+
       '<td class="num">'+(r.cs.nextRenewal||'—')+'</td>'+
       '<td class="num">'+r.lastWin+'</td>'+
-      '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.bonus+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td>'+
-      '<td><span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span></td></tr>';
+      '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.bonus+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
   });
   html += '</tbody></table></div>';
 
