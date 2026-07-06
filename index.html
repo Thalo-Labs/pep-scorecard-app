@@ -131,13 +131,9 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 #gh-connect-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin-left:10px;}
 .gh-blocked{background:#FFF7E8;border:1px solid #F2D08A;border-radius:10px;padding:16px 18px;margin-bottom:14px;font-size:13px;line-height:1.6;}
 
-.viewer-edit-only{display:contents;}
-body.viewer-mode .viewer-edit-only,
-body.viewer-mode .customer-info-bar,
-body.viewer-mode .contracts-panel,
-body.viewer-mode .tab[data-panel="cadence"],
-body.viewer-mode .tab[data-panel="milestones"],
-body.viewer-mode .tab[data-panel="plays"]{display:none;}
+body.viewer-mode input:disabled,
+body.viewer-mode select:disabled,
+body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -162,7 +158,7 @@ body.viewer-mode .tab[data-panel="plays"]{display:none;}
     <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens scoped to just the <b>Thalo-Labs/pep-scorecard-data</b> repo — <b>Contents: Read & write</b> to edit, <b>Contents: Read</b> if you only need to view. Saved only in this browser — never written to the file itself.</p>
     <div class="info-field" style="flex-direction:row;align-items:center;gap:6px;margin:10px 0;">
       <input type="checkbox" id="gh-viewer-mode" style="width:auto;">
-      <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Viewer mode — read-only, hides customer info, contracts, and the Fixed Cadence / Bonus Log tabs</label>
+      <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Viewer mode — browse every tab and customer, but every editable control is disabled</label>
     </div>
     <button id="gh-connect-btn" class="primary">Save &amp; connect</button>
     <span id="gh-connect-status"></span>
@@ -172,13 +168,10 @@ body.viewer-mode .tab[data-panel="plays"]{display:none;}
   <div class="customer-bar">
     <label>Customer</label>
     <select id="customer-select"></select>
-    <span class="viewer-edit-only">
-      <input type="text" id="new-customer-name" placeholder="New customer name">
-      <button id="add-customer">Add customer</button>
-    </span>
-    <span class="viewer-edit-only">
-      <label>Type</label>
-      <select id="info-customer-type">
+    <input type="text" id="new-customer-name" placeholder="New customer name">
+    <button id="add-customer">Add customer</button>
+    <label>Type</label>
+    <select id="info-customer-type">
       <option value="">—</option>
       <option value="core-enterprise">Core ICP - Enterprise</option>
       <option value="core-midtier">Core ICP - Mid-tier</option>
@@ -187,7 +180,6 @@ body.viewer-mode .tab[data-panel="plays"]{display:none;}
       <option value="affiliate">Affiliate</option>
       <option value="buildings">Buildings ("HVAC as a service")</option>
     </select>
-    </span>
     <span id="save-status"></span>
   </div>
 
@@ -357,16 +349,17 @@ function setGhStatus(msg, cls){
   el.className = 'gh-status'+(cls?' '+cls:'');
 }
 
+function isViewerMode(){
+  return document.body.classList.contains('viewer-mode');
+}
+
 function applyViewerMode(on){
   document.body.classList.toggle('viewer-mode', !!on);
-  if(on){
-    const activeTab = document.querySelector('.tab.active');
-    const hiddenPanels = ['cadence','milestones','plays'];
-    if(activeTab && hiddenPanels.indexOf(activeTab.dataset.panel) !== -1){
-      const scorecardTab = document.querySelector('.tab[data-panel="scorecard"]');
-      if(scorecardTab) scorecardTab.click();
-    }
-  }
+  ['new-customer-name','add-customer','add-contract-btn','autoscore-btn'].forEach(function(id){
+    const el = document.getElementById(id);
+    if(el) el.disabled = !!on;
+  });
+  renderAll();
 }
 
 async function tryConnectGh(cfg, silent){
@@ -669,7 +662,7 @@ function renderCadence(){
       const isAuto = AUTOSCORE_ITEM_IDS.indexOf(item.id) !== -1;
       let scoreControl;
       if(item.scoring){
-        scoreControl = '<select class="status-select" data-id="'+item.id+'">'+
+        scoreControl = '<select class="status-select" data-id="'+item.id+'" '+(isViewerMode()?'disabled':'')+'>'+
           item.scoring.map(function(opt, i){ return '<option value="'+i+'" '+(i===selIdx?'selected':'')+'>'+opt.label+'</option>'; }).join('')+
           '</select>';
       } else {
@@ -714,7 +707,7 @@ function renderMilestones(){
           '<div class="field-text">'+item.action+' <span style="color:var(--ink-soft)">— '+item.play+'</span></div>'+
           '<div class="cap-note">'+item.cap+'</div>'+
         '</div>'+
-        '<div class="bonus-add"><button data-log-id="'+item.id+'">+ Log for '+QUARTER_LABEL[selectedQuarter]+'</button></div>'+
+        '<div class="bonus-add"><button data-log-id="'+item.id+'" '+(isViewerMode()?'disabled':'')+'>+ Log for '+QUARTER_LABEL[selectedQuarter]+'</button></div>'+
       '</div>';
   });
 
@@ -725,7 +718,7 @@ function renderMilestones(){
   } else {
     log.forEach(function(entry, idx){
       const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-      html += '<div class="log-item"><span>'+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b></span><button data-remove-log="'+idx+'">Remove</button></div>';
+      html += '<div class="log-item"><span>'+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b></span><button data-remove-log="'+idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
     });
   }
   html += '</div>';
@@ -994,12 +987,12 @@ function updateProgress(){
 
 function renderCustomerInfo(){
   document.getElementById('info-customer-type').value = state.info.customerType || '';
-  document.getElementById('info-customer-type').disabled = !currentCustomer;
+  document.getElementById('info-customer-type').disabled = !currentCustomer || isViewerMode();
   document.getElementById('info-onboarding-date').value = state.info.onboardingMeetingDate || '';
   document.getElementById('info-flag-date').value = state.info.firstFlagDate || '';
   document.getElementById('info-checkin-date').value = state.info.checkinDate || '';
   document.getElementById('info-survey1-date').value = state.info.survey1SentDate || '';
-  const disabled = !currentCustomer;
+  const disabled = !currentCustomer || isViewerMode();
   ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date'].forEach(function(id){
     document.getElementById(id).disabled = disabled;
   });
@@ -1009,16 +1002,17 @@ function renderCustomerInfo(){
 function renderContracts(){
   const el = document.getElementById('contracts-list');
   const contracts = state.info.contracts || [];
+  const disabledAttr = (!currentCustomer || isViewerMode()) ? 'disabled' : '';
   let html = '';
   contracts.forEach(function(c, i){
     html += ''+
       '<div class="contract-row">'+
-        '<div class="info-field"><label>Contract '+(i+1)+' · qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantity" value="'+(c.quantity||'')+'" placeholder="0" '+(!currentCustomer?'disabled':'')+'></div>'+
-        '<div class="info-field"><label>Sign date</label><input type="date" data-contract-index="'+i+'" data-field="signDate" value="'+(c.signDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
-        '<div class="info-field"><label>Shipped date</label><input type="date" data-contract-index="'+i+'" data-field="shippedDate" value="'+(c.shippedDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
-        '<div class="info-field"><label>Install date</label><input type="date" data-contract-index="'+i+'" data-field="installDate" value="'+(c.installDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
-        '<div class="info-field"><label>Contract end date</label><input type="date" data-contract-index="'+i+'" data-field="expirationDate" value="'+(c.expirationDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
-        (contracts.length>1 ? '<button class="remove-contract" data-remove-contract="'+i+'" '+(!currentCustomer?'disabled':'')+'>Remove</button>' : '<span></span>')+
+        '<div class="info-field"><label>Contract '+(i+1)+' · qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantity" value="'+(c.quantity||'')+'" placeholder="0" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Sign date</label><input type="date" data-contract-index="'+i+'" data-field="signDate" value="'+(c.signDate||'')+'" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Shipped date</label><input type="date" data-contract-index="'+i+'" data-field="shippedDate" value="'+(c.shippedDate||'')+'" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Install date</label><input type="date" data-contract-index="'+i+'" data-field="installDate" value="'+(c.installDate||'')+'" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Contract end date</label><input type="date" data-contract-index="'+i+'" data-field="expirationDate" value="'+(c.expirationDate||'')+'" '+disabledAttr+'></div>'+
+        (contracts.length>1 ? '<button class="remove-contract" data-remove-contract="'+i+'" '+disabledAttr+'>Remove</button>' : '<span></span>')+
       '</div>';
   });
   el.innerHTML = html;
