@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PEP Scorecard — Year One (Internal)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+:root{
+  --bg:#F2F1EC; --panel:#FFFFFF; --ink:#1B2430; --ink-soft:#6B7280; --line:#DEDCD2;
+  --dj:#2F6FED; --eg:#7C5CFC; --mellina:#B45309; --nina:#0F766E;
+  --t-warmup:#DC2626; --t-ontrack:#D97706; --t-strong:#1E9E6B; --t-champion:#7C5CFC;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:980px;margin:0 auto;padding:36px 24px 100px;}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;}
+h1{font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:700;margin:0 0 8px;letter-spacing:-0.01em;}
+.sub{color:var(--ink-soft);font-size:14.5px;max-width:660px;line-height:1.5;margin:0 0 20px;}
+
+.customer-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+.customer-bar label{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);}
+
+.customer-info-bar{display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+.customer-info-bar .info-header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
+.info-field{display:flex;flex-direction:column;gap:4px;}
+.info-field label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);}
+.info-field input{width:100%;}
+.info-field input[type=number]{width:100%;}
+.autoscore-badge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;color:var(--eg);border:1px solid var(--eg);border-radius:4px;padding:1px 5px;margin-left:6px;}
+
+.contracts-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+.contract-row{display:grid;grid-template-columns:70px 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line);}
+.contract-row:last-of-type{border-bottom:none;}
+.contract-row .info-field{min-width:0;}
+.contract-row .remove-contract{padding:7px 10px;font-size:10px;height:36px;}
+.contract-index{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);align-self:center;}
+@media (max-width:800px){.contract-row{grid-template-columns:1fr 1fr;}}
+.info-summary{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#A8B3E8;margin-top:4px;}
+select,input[type=text],input[type=number]{font-family:'IBM Plex Sans',sans-serif;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);}
+button{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;}
+button:hover{border-color:var(--ink-soft);}
+button.primary{background:var(--eg);border-color:var(--eg);color:#fff;}
+#save-status{font-size:11px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+
+.tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.tab{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
+  padding:10px 14px;cursor:pointer;color:var(--ink-soft);border-bottom:2px solid transparent;}
+.tab.active{color:var(--ink);border-bottom-color:var(--eg);}
+.progress{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 16px;}
+.progress b{color:var(--ink);}
+
+.panel{display:none;}
+.panel.active{display:block;}
+
+.phase-header{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--ink-soft);margin:26px 0 10px;text-transform:uppercase;letter-spacing:.03em;}
+.phase-header:first-child{margin-top:0;}
+
+.row{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;align-items:flex-start;}
+.row-body{flex:1;}
+.row-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;}
+.row-time{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;color:var(--ink-soft);background:#FAFAF7;border:1px solid var(--line);border-radius:5px;padding:2px 6px;}
+.row-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14.5px;}
+.pill{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:999px;color:#fff;letter-spacing:.02em;}
+.tag-flex{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--eg);text-transform:uppercase;}
+.tag-win{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:#EA580C;text-transform:uppercase;}
+.tag-proposed{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--t-ontrack);text-transform:uppercase;}
+.tag-new{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--eg);text-transform:uppercase;border:1px solid var(--eg);border-radius:4px;padding:1px 4px;}
+.field-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:6px 0 2px;}
+.field-text{font-size:13px;line-height:1.5;color:var(--ink);}
+.field-text.customer{font-style:italic;color:var(--ink-soft);}
+.status-select{margin-left:auto;font-weight:600;min-width:220px;}
+.no-score-note{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);font-style:italic;}
+.pts-note{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-soft);}
+.unspecified-note{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t-ontrack);margin-top:4px;}
+
+.play-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+.play-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;}
+.play-card h3{font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 6px;}
+.play-card .field-label{margin-top:8px;}
+@media (max-width:700px){.play-grid{grid-template-columns:1fr;}}
+
+.bonus-row{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;align-items:center;flex-wrap:wrap;}
+.bonus-info{flex:1;min-width:220px;}
+.bonus-add{display:flex;gap:8px;align-items:center;}
+.cap-note{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);}
+.log-list{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:16px;}
+.log-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.log-item:last-child{border-bottom:none;}
+.log-item button{padding:2px 8px;font-size:10px;}
+
+.score-hero{background:#12193B;color:#fff;border-radius:14px;padding:22px 24px;margin-bottom:18px;}
+.score-hero .eyebrow{color:#A8B3E8;}
+.score-grid{display:flex;gap:28px;flex-wrap:wrap;align-items:center;margin-top:8px;}
+.score-block{text-align:left;}
+.score-block .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#A8B3E8;text-transform:uppercase;letter-spacing:.06em;}
+.score-block .val{font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;}
+.tier-badge{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;padding:8px 16px;border-radius:8px;color:#fff;letter-spacing:.02em;}
+
+table.tiertable{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+table.tiertable th,table.tiertable td{padding:10px 12px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line);}
+table.tiertable th{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);background:#FAFAF7;}
+table.tiertable tr.current-tier{background:#FFF7E8;}
+table.tiertable tr:last-child td{border-bottom:none;}
+
+table.quarters{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+table.quarters th,table.quarters td{padding:9px 12px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line);}
+table.quarters th{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);background:#FAFAF7;}
+table.quarters td.num{font-family:'IBM Plex Mono',monospace;}
+table.quarters tr:last-child td{border-bottom:none;}
+
+table.leaderboard{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+table.leaderboard th,table.leaderboard td{padding:10px 12px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+table.leaderboard th{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);background:#FAFAF7;cursor:pointer;}
+table.leaderboard td.num{font-family:'IBM Plex Mono',monospace;}
+table.leaderboard tr:last-child td{border-bottom:none;}
+table.leaderboard tr.this-customer{background:#FFF7E8;}
+.table-scroll{overflow-x:auto;border-radius:10px;}
+.table-scroll table.leaderboard{border-radius:0;}
+.rank{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
+
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-soft);}
+
+.gh-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;}
+.gh-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);}
+.gh-status.connected{color:var(--good, #1E9E6B);}
+.gh-status.error{color:var(--action, #DC2626);}
+.gh-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+.gh-fields{display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:14px;margin-top:10px;}
+.gh-note{font-size:12px;color:var(--ink-soft);margin:10px 0;line-height:1.5;}
+#gh-connect-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin-left:10px;}
+.gh-blocked{background:#FFF7E8;border:1px solid #F2D08A;border-radius:10px;padding:16px 18px;margin-bottom:14px;font-size:13px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Partnership Experience Playbook — Internal</h1>
+  <p class="sub">Every task now has its own timing-based scoring, matching your rules exactly. Milestones and customer actions log as bonus points. Add it up every quarter and the customer lands in a tier.</p>
+
+  <div class="gh-bar">
+    <span id="gh-status" class="gh-status">Not connected to GitHub</span>
+    <button id="gh-settings-btn">⚙ GitHub sync</button>
+  </div>
+
+  <div class="gh-panel" id="gh-panel" style="display:none;">
+    <div class="info-header">
+      <span class="field-label" style="margin:0;">GitHub sync — data is stored as a JSON file in a repo, shared by anyone with a token</span>
+      <button id="gh-disconnect-btn">Disconnect</button>
+    </div>
+    <div class="gh-fields">
+      <div class="info-field"><label>Repo owner</label><input type="text" id="gh-owner" placeholder="Thalo-Labs"></div>
+      <div class="info-field"><label>Repo name</label><input type="text" id="gh-repo" placeholder="pep-scorecard-data"></div>
+      <div class="info-field"><label>File path</label><input type="text" id="gh-path" placeholder="data/pep-scorecard.json"></div>
+      <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write"></div>
+    </div>
+    <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens with <b>Contents: Read & write</b> access to this one repo. Saved only in this browser — never written to the file itself.</p>
+    <button id="gh-connect-btn" class="primary">Save &amp; connect</button>
+    <span id="gh-connect-status"></span>
+  </div>
+
+  <div id="app-root" style="display:none;">
+  <div class="customer-bar">
+    <label>Customer</label>
+    <select id="customer-select"></select>
+    <input type="text" id="new-customer-name" placeholder="New customer name">
+    <button id="add-customer">Add customer</button>
+    <label>Type</label>
+    <select id="info-customer-type">
+      <option value="">—</option>
+      <option value="core-enterprise">Core ICP - Enterprise</option>
+      <option value="core-midtier">Core ICP - Mid-tier</option>
+      <option value="specialty-oem">Speciality / OEM</option>
+      <option value="resi-partner">Resi Partner</option>
+      <option value="affiliate">Affiliate</option>
+      <option value="buildings">Buildings ("HVAC as a service")</option>
+    </select>
+    <span id="save-status"></span>
+  </div>
+
+  <div class="customer-info-bar">
+    <div class="info-header">
+      <span class="field-label" style="margin:0;">Customer milestones — once per customer, drives autoscore below</span>
+      <button id="autoscore-btn">Recalculate scores from dates</button>
+    </div>
+    <div class="info-field"><label>Onboarding meeting date</label><input type="date" id="info-onboarding-date"></div>
+    <div class="info-field"><label>First flag date</label><input type="date" id="info-flag-date"></div>
+    <div class="info-field"><label>Post-install check-in date</label><input type="date" id="info-checkin-date"></div>
+    <div class="info-field"><label>Survey #1 sent date</label><input type="date" id="info-survey1-date"></div>
+  </div>
+
+  <div class="contracts-panel">
+    <div class="info-header">
+      <span class="field-label" style="margin:0;">Contracts — one row per order, add as many as this customer has</span>
+      <button id="add-contract-btn">+ Add contract</button>
+    </div>
+    <div id="contracts-list"></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-panel="cadence">Fixed cadence</div>
+    <div class="tab" data-panel="milestones">Bonus log</div>
+    <div class="tab" data-panel="plays">Engagement plays</div>
+    <div class="tab" data-panel="scorecard">Scorecard</div>
+    <div class="tab" data-panel="leaderboard">All customers</div>
+  </div>
+
+  <div class="progress" id="progress-line"></div>
+
+  <div class="panel active" id="panel-cadence"></div>
+  <div class="panel" id="panel-milestones"></div>
+  <div class="panel" id="panel-plays"></div>
+  <div class="panel" id="panel-scorecard"></div>
+  <div class="panel" id="panel-leaderboard"></div>
+
+  <footer>
+    Each cadence task scores against its own timing rule, set the outcome from its dropdown. Bonus points come from logging real milestones and customer actions as they happen, no cap. Grading is now percentage of that quarter's own max delivery score, since Q1 has far more scorable tasks (max 45) than Q2–Q4 (max 12, 9, 12) — a flat point threshold would've made the later quarters nearly impossible to clear on delivery alone. Bonus points count as pure upside on top, so a quarter can run past 100%. "Formal renewal proposal delivered" (Month 11) didn't come with a specified point value, it's defaulted to 3/0 to match the other one-time deliverables, flag if that's wrong. Data syncs to GitHub, shared by anyone with a token for this repo.
+  </footer>
+  </div>
+</div>
+
+<script>
+/* ===== GitHub sync layer =====
+   Replaces the Claude-artifact window.storage API with a shim backed by
+   a single JSON file in a GitHub repo, read/written via the Contents API.
+   Anyone with a token for the repo shares the same data. */
+
+const GH = {owner:'', repo:'', path:'', pat:'', sha:null, cache:null};
+const GH_CONFIG_KEY = 'pep-gh-config';
+
+function loadGhConfig(){
+  try{
+    const raw = localStorage.getItem(GH_CONFIG_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function saveGhConfig(cfg){
+  try{ localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+}
+function clearGhConfig(){
+  try{ localStorage.removeItem(GH_CONFIG_KEY); }catch(e){}
+}
+
+function b64ToStr(b64){
+  return decodeURIComponent(escape(atob(b64.replace(/\n/g,''))));
+}
+function strToB64(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+async function ghApi(path, options){
+  options = options || {};
+  const headers = Object.assign({
+    Authorization: 'token '+GH.pat,
+    Accept: 'application/vnd.github+json'
+  }, options.headers || {});
+  const res = await fetch('https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+path, Object.assign({}, options, {headers: headers}));
+  return res;
+}
+
+async function ghLoadFile(force){
+  if(GH.cache && !force) return GH.cache;
+  const res = await ghApi(GH.path, {method:'GET'});
+  if(res.status === 404){ GH.cache = {}; GH.sha = null; return GH.cache; }
+  if(res.status === 401 || res.status === 403){
+    const err = new Error('GitHub auth failed ('+res.status+'). Check the token and repo permissions.');
+    err.auth = true; throw err;
+  }
+  if(!res.ok){
+    const err = new Error('GitHub read failed ('+res.status+').');
+    throw err;
+  }
+  const data = await res.json();
+  GH.sha = data.sha;
+  GH.cache = JSON.parse(b64ToStr(data.content) || '{}');
+  return GH.cache;
+}
+
+async function ghSaveFile(){
+  const body = {
+    message: 'Update PEP scorecard data',
+    content: strToB64(JSON.stringify(GH.cache, null, 2))
+  };
+  if(GH.sha) body.sha = GH.sha;
+  const res = await ghApi(GH.path, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if(res.status === 409 || res.status === 422){
+    const err = new Error('conflict'); err.conflict = true; throw err;
+  }
+  if(res.status === 401 || res.status === 403){
+    const err = new Error('GitHub auth failed ('+res.status+').'); err.auth = true; throw err;
+  }
+  if(!res.ok){
+    const t = await res.text().catch(function(){return '';});
+    throw new Error('GitHub write failed ('+res.status+'). '+t);
+  }
+  const data = await res.json();
+  GH.sha = data.content.sha;
+}
+
+function installGithubStorageShim(){
+  window.storage = {
+    get: async function(key){
+      const cache = await ghLoadFile();
+      if(!(key in cache)){ const e = new Error('not found'); throw e; }
+      return {key: key, value: cache[key]};
+    },
+    set: async function(key, value){
+      await ghLoadFile();
+      GH.cache[key] = value;
+      try{
+        await ghSaveFile();
+      }catch(e){
+        if(e.conflict){
+          await ghLoadFile(true);
+          GH.cache[key] = value;
+          await ghSaveFile();
+        } else {
+          throw e;
+        }
+      }
+      return {key: key, value: value};
+    },
+    delete: async function(key){
+      await ghLoadFile();
+      delete GH.cache[key];
+      await ghSaveFile();
+      return {key: key, deleted: true};
+    },
+    list: async function(prefix){
+      const cache = await ghLoadFile();
+      const keys = Object.keys(cache).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
+      return {keys: keys};
+    }
+  };
+}
+
+function setGhStatus(msg, cls){
+  const el = document.getElementById('gh-status');
+  el.textContent = msg;
+  el.className = 'gh-status'+(cls?' '+cls:'');
+}
+
+async function tryConnectGh(cfg, silent){
+  GH.owner = cfg.owner; GH.repo = cfg.repo; GH.path = cfg.path; GH.pat = cfg.pat;
+  GH.cache = null; GH.sha = null;
+  installGithubStorageShim();
+  try{
+    await ghLoadFile();
+    setGhStatus('Connected — '+cfg.owner+'/'+cfg.repo, 'connected');
+    document.getElementById('app-root').style.display = '';
+    document.getElementById('gh-panel').style.display = 'none';
+    return true;
+  }catch(e){
+    setGhStatus(e.auth ? 'GitHub auth failed, check token/permissions' : 'GitHub connection failed', 'error');
+    document.getElementById('app-root').style.display = 'none';
+    if(!silent) document.getElementById('gh-connect-status').textContent = e.message;
+    window.storage = undefined;
+    return false;
+  }
+}
+
+document.getElementById('gh-settings-btn').addEventListener('click', function(){
+  const panel = document.getElementById('gh-panel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+});
+document.getElementById('gh-disconnect-btn').addEventListener('click', function(){
+  clearGhConfig();
+  GH.owner=''; GH.repo=''; GH.path=''; GH.pat=''; GH.cache=null; GH.sha=null;
+  window.storage = undefined;
+  document.getElementById('gh-owner').value='';
+  document.getElementById('gh-repo').value='';
+  document.getElementById('gh-path').value='';
+  document.getElementById('gh-pat').value='';
+  document.getElementById('app-root').style.display = 'none';
+  setGhStatus('Not connected to GitHub');
+});
+document.getElementById('gh-connect-btn').addEventListener('click', async function(){
+  const cfg = {
+    owner: document.getElementById('gh-owner').value.trim(),
+    repo: document.getElementById('gh-repo').value.trim(),
+    path: document.getElementById('gh-path').value.trim() || 'data/pep-scorecard.json',
+    pat: document.getElementById('gh-pat').value.trim()
+  };
+  if(!cfg.owner || !cfg.repo || !cfg.pat){
+    document.getElementById('gh-connect-status').textContent = 'owner, repo, and token are required';
+    return;
+  }
+  document.getElementById('gh-connect-status').textContent = 'connecting…';
+  const ok = await tryConnectGh(cfg);
+  if(ok){
+    saveGhConfig(cfg);
+    document.getElementById('gh-connect-status').textContent = '';
+    if(window.pepAppInit) window.pepAppInit();
+  }
+});
+
+(async function initGhConnection(){
+  const cfg = loadGhConfig();
+  if(cfg && cfg.owner && cfg.repo && cfg.pat){
+    document.getElementById('gh-owner').value = cfg.owner;
+    document.getElementById('gh-repo').value = cfg.repo;
+    document.getElementById('gh-path').value = cfg.path || '';
+    document.getElementById('gh-pat').value = cfg.pat;
+    const ok = await tryConnectGh(cfg, true);
+    if(ok && window.pepAppInit) window.pepAppInit();
+  }
+})();
+/* ===== end GitHub sync layer ===== */
+
+const OWNER_COLOR = {dj:'#2F6FED', eg:'#7C5CFC', mellina:'#B45309', nina:'#0F766E'};
+const OWNER_LABEL = {dj:'DJ', eg:'Elaine', mellina:'Mellina', nina:'Nina'};
+
+const CUSTOMER_TYPE_LABEL = {
+  'core-enterprise':'Core ICP - Enterprise',
+  'core-midtier':'Core ICP - Mid-tier',
+  'specialty-oem':'Speciality / OEM',
+  'resi-partner':'Resi Partner',
+  'affiliate':'Affiliate',
+  'buildings':'Buildings (HVAC as a service)'
+};
+const CUSTOMER_TYPE_COLOR = {
+  'core-enterprise':'#A5B4FC',
+  'core-midtier':'#B39DDB',
+  'specialty-oem':'#B7DFB0',
+  'resi-partner':'#F3B4AE',
+  'affiliate':'#C793AE',
+  'buildings':'#E3C08D'
+};
+const QUARTER_LABEL = {q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4'};
+
+function S(){ // scoring option builder, first option is always Pending
+  const opts = [{label:'Pending', points:0}];
+  for(let i=0;i<arguments.length;i++) opts.push(arguments[i]);
+  return opts;
+}
+
+const CADENCE = [
+  {phase:'Before Day 0', quarter:'q1', items:[
+    {id:'signed', time:'Signed', owners:['eg','dj'], task:'Kickoff sequence starts',
+      internal:"EG sends the standard Signed & Onboarding email, schedules kickoff/training. DJ preps the Copilot org and logins.",
+      customer:'"You\'re ready before Sidekick ships."',
+      scoring:S({label:'Same day as signing (+3)',points:3},{label:'Delayed (+1)',points:1})},
+    {id:'onboarding-meeting', time:'Signed', owners:['eg','dj'], task:'Onboarding meeting',
+      internal:'EG: customer understands the evaluation process and its potential impact. DJ: customer is trained, logged in, alert preferences set.',
+      customer:'Training scheduled, users added, alert preferences set.',
+      scoring:S({label:'Within 2 weeks of signing (+3)',points:3},{label:'Delayed (+1)',points:1})},
+    {id:'shipping', time:'Pre-Day 0', owners:['mellina','dj'], task:'Hardware on its way',
+      internal:'Mellina manages the shipment and stands up virtual tech support. DJ shares tracking, sends the Fuel Kit + Swag.',
+      customer:'Tracking info in hand before the sensor even arrives.',
+      scoring:S({label:'Shipped within 7 days (+5)',points:5},{label:'Shipped within 14 days (+3)',points:3},{label:'More than 14 days (+1)',points:1})}
+  ]},
+  {phase:'Day 0–30 · Evaluation', quarter:'q1', items:[
+    {id:'install-timing', time:'Day 0', owners:['dj','mellina'], task:'Installation timing (vs. equipment arrival)',
+      internal:'How long it took to get the sensor installed once hardware arrived on site.',
+      customer:'The faster this happens, the faster they\'re live.',
+      scoring:S({label:'Installed within 7 days of arrival (+5)',points:5},{label:'Within 14 days (+3)',points:3},{label:'More than 14 days (+1)',points:1})},
+    {id:'day0', time:'Day 0', owners:['dj','mellina'], task:'Install day — clean first try',
+      internal:'DJ nudges for install, sends the first install notification. Mellina on standby for virtual tech support / drop-ship replacements.',
+      customer:'"You\'re live: first location on the map."',
+      scoring:S({label:'Everything went well on first try (+3)',points:3},{label:'Issues on first try (0)',points:0})},
+    {id:'day3', time:'Day 3', owners:['dj'], task:'Baseline status update',
+      internal:'DJ shares the 3-day update email.',
+      customer:'"First health check: your baseline, in your inbox."',
+      scoring:S({label:'Sent by day 3 (+3)',points:3},{label:'Sent within first week (+1)',points:1},{label:'Not sent (0)',points:0})},
+    {id:'day7-flag', time:'Day 7', owners:['dj'], task:'First flag — the credibility moment',
+      internal:"DJ watches for the first real flag, gets ahead of it with the customer before they find it cold.",
+      customer:'"Almost every customer sees their first real issue within the first week."',
+      scoring:S({label:'Flagged within 2 days (+5)',points:5},{label:'Flagged within 7 days (+3)',points:3},{label:'Not flagged (0)',points:0})},
+    {id:'day7-meeting', time:'Day 7', owners:['dj'], task:'1-week post-install check-in meeting',
+      internal:'DJ gets feedback on the install and experience so far, flags anything missing.',
+      customer:'A real conversation, not just an email.',
+      scoring:S({label:'Done within 7 days post-install (+3)',points:3},{label:'Done after 7 days (+1)',points:1})},
+    {id:'day14-baseline', time:'Day 14', owners:['dj'], task:'Baseline locked in',
+      internal:'DJ confirms the summary email cadence matches what the customer picked. No points for this one, it\'s a system milestone, not a task.',
+      customer:'"Baseline locked in: now you know what normal looks like."',
+      scoring:null},
+    {id:'day14-partnering', time:'Day 21', owners:['eg'], task:'Decision-maker partnering meeting',
+      internal:"EG plants the expansion seed: how and when it's possible. Target moved to day 21.",
+      customer:'Hears expansion is on the table, not a surprise ask later.',
+      scoring:S({label:'By day 21 (+3)',points:3},{label:'After day 21 (+1)',points:1})},
+    {id:'day30-survey', time:'Day 30', owners:['dj','eg'], task:'Survey #1 — 30 day',
+      internal:'All: send the eval survey while the experience is still fresh.',
+      customer:'A short survey, not a novel.',
+      scoring:S({label:'Sent by day 30 (+3)',points:3},{label:'Sent after day 30 (+1)',points:1})},
+    {id:'day30-report', time:'Day 30', owners:['dj','eg'], task:'First report',
+      internal:'DJ leads the post-install data + actions review. EG leads Copilot impact and expansion progression.',
+      customer:'"First report: something you can actually show someone."',
+      scoring:S({label:'Sent by day 30 (+3)',points:3},{label:'Sent after day 30 (+1)',points:1})}
+  ]},
+  {phase:'Month 2', quarter:'q1', items:[
+    {id:'m2', time:'Month 2', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Pull from Engagement Plays: swag, a feature update, or a quick call.',
+      customer:'Varies by customer, see Engagement Plays.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 3 — Q1 win', quarter:'q1', items:[
+    {id:'q1win', time:'Month 3', owners:['dj','eg'], win:true, task:'Quarterly review + Q1 win',
+      internal:'DJ emails the quarterly baseline report, collects feedback, surfaces one publicly-shareable win. EG starts scoping Phase 2.',
+      customer:'"You\'re dispatching smarter."',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 4', quarter:'q2', items:[
+    {id:'m4', time:'Month 4', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: seasonal swag, a certificate, or a feature announcement.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 5', quarter:'q2', items:[
+    {id:'m5', time:'Month 5', owners:['dj','eg'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: event/thought-leadership invite (bring in Brendan), or an in-person check-in.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 6 — Q2 win + Survey #2', quarter:'q2', items:[
+    {id:'q2win', time:'Month 6', owners:['eg','dj'], win:true, task:'Quarterly review + Q2 win',
+      internal:"EG delivers the Phase 2 expansion proposal off Q1's proof points.",
+      customer:'"A track record you can point to."',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})},
+    {id:'survey2', time:'Month 6', owners:['dj','eg'], task:'Survey #2 — semi-annual',
+      internal:'All: send the semi-annual health/NPS survey alongside the mid-year review.',
+      customer:'A quick pulse check, not a surprise.',
+      scoring:S({label:'Sent on time (+3)',points:3},{label:'Sent late (+1)',points:1})}
+  ]},
+  {phase:'Month 7', quarter:'q3', items:[
+    {id:'m7', time:'Month 7', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: HVAC Tech Day invite, or a case-study conversation.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 8', quarter:'q3', items:[
+    {id:'m8', time:'Month 8', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: swag drop, or a referral ask if the last survey came back a promoter score.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 9 — Q3 win (proposed)', quarter:'q3', items:[
+    {id:'q3win', time:'Month 9', owners:['dj','eg'], win:true, proposed:true, task:'Quarterly review + Q3 win',
+      internal:'DJ runs a mid/late-year customer review, turns wins into a case study draft. EG opens the renewal conversation informally.',
+      customer:'"Here\'s what we found this year, and here\'s what\'s next."',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 10', quarter:'q4', items:[
+    {id:'m10', time:'Month 10', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: annual recap drafting starts, or a milestone certificate/swag.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]},
+  {phase:'Month 11', quarter:'q4', items:[
+    {id:'m11-touchpoint', time:'Month 11', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+      internal:'Suggested: keep the relationship warm while the renewal proposal is in motion.',
+      customer:'Varies by customer.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})},
+    {id:'m11', time:'Month 11', owners:['eg'], proposed:true, task:'Formal renewal proposal delivered',
+      internal:'EG delivers the renewal/expansion proposal ahead of the notice deadline. Default reminder if renewal hasn\'t happened yet, it can land earlier, log it in the Bonus Log for whatever quarter it actually happens.',
+      customer:'The renewal ask, on time, not scrambled.',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0}), unspecified:true}
+  ]},
+  {phase:'Month 12 — recap', quarter:'q4', items:[
+    {id:'q4win', time:'Month 12', owners:['eg','dj'], win:true, proposed:true, task:'Month 12 recap',
+      internal:'DJ builds the annual recap: issues caught, callbacks avoided, ROI in plain numbers. EG + DJ set year-two scope together.',
+      customer:'"Your year one, and what year two looks like."',
+      scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
+  ]}
+];
+
+const MILESTONES = [
+  {id:'ms-units10', trigger:'10+ units live', action:'Send installer certificate + shoutout', owners:['dj'], play:'Certificates & Badges', points:15, cap:'No cap, log each threshold crossed'},
+  {id:'ms-expansion', trigger:'Expansion order placed', action:'Refresh the partnering conversation, resend the Fuel Kit', owners:['dj','eg'], play:'Swag', points:20, cap:'No cap, can happen any quarter, log each order when it lands'},
+  {id:'ms-winlogged', trigger:'Before/after win logged', action:'Flag as a case-study candidate', owners:['dj'], play:'Case Study / Public Win', points:15, cap:'No cap'},
+  {id:'ms-promoter', trigger:'Survey score is a promoter', action:'Ask for a referral or reference', owners:['eg'], play:'Referral / Reference Ask', points:15, cap:'Once per survey received'},
+  {id:'ms-renewal', trigger:'Renewal signed', action:'Send thank-you swag, kick off Year 2 planning', owners:['eg','dj'], play:'Swag', points:25, cap:"Once per year, but it can land in any quarter, not just Q4, log it whenever it's actually signed"},
+  {id:'ms-feature', trigger:'Relevant new feature ships', action:'Send a proactive feature announcement', owners:['dj'], play:'New Feature Announcement', points:5, cap:'No cap'},
+  {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:10, cap:'No cap'},
+  {id:'ms-techvolume', trigger:'A tech hits an install/repair volume threshold', action:'Individual certificate or swag', owners:['dj'], play:'Certificates & Badges', points:10, cap:'No cap, log per tech'},
+  {id:'ms-invite-user', trigger:'Customer invites a new user', action:'Adoption signal, no action needed beyond noting it', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap, log each new user invited'},
+  {id:'ms-notif-update', trigger:'Customer updates notification/alert preferences', action:'Adoption signal, they\'re engaging with the platform', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'},
+  {id:'ms-survey-response', trigger:'Customer responds to a survey', action:'Log it, follow up if the score is low', owners:['dj','eg'], play:'Adoption signal', points:5, cap:'No cap, log each survey response'}
+];
+
+const PLAYS = [
+  {name:'Swag', what:'Physical goods sent to mark a moment.', when:'Milestone hit, quarterly warm touch, renewal, holidays.', owner:'DJ ships, Mellina fulfills'},
+  {name:'Certificates & Badges', what:'Recognition for install/repair volume, tech-level or company-level.', when:'Unit or repair thresholds hit.', owner:'DJ'},
+  {name:'New Feature Announcement', what:'Proactive heads-up when a shipped feature fits their equipment mix.', when:"Anytime it's relevant, don't wait for a scheduled touchpoint.", owner:'DJ, content from product'},
+  {name:'In-Person Check-in', what:'Site visit or office drop-by.', when:'Key customers, or when the relationship needs a reset.', owner:'DJ, EG for strategic customers'},
+  {name:'HVAC Tech Day', what:'Invite techs and decision-makers to an industry or company event.', when:'High-touch, occasional, best for multi-tech customers.', owner:'DJ invites, EG hosts execs'},
+  {name:'Case Study / Public Win', what:'Turn a real fix into a shareable story.', when:'Needs customer sign-off, best right after a clean before/after.', owner:'DJ drafts, EG/Brendan approve external use'},
+  {name:'Referral / Reference Ask', what:'Request an intro to another site or company.', when:'After a proven win or a promoter-level survey.', owner:'EG'},
+  {name:'Expansion Proposal', what:'Formal Phase 2 scope and pricing.', when:'Once usage data backs it up, usually Q1–Q2.', owner:'EG, DJ feeds usage data'}
+];
+
+const TIERS = [
+  {key:'champion', label:'Champion customer', min:90, color:'#7C5CFC', action:'Feature as a partner spotlight, invite to HVAC Tech Day as a showcase customer, consider for reference calls.'},
+  {key:'strong', label:'Strong partner', min:70, color:'#1E9E6B', action:'Candidate for a case study ask or a referral ask.'},
+  {key:'ontrack', label:'On track', min:50, color:'#D97706', action:'Keep the current cadence going, nothing extra needed.'},
+  {key:'warmup', label:'Needs attention', min:0, color:'#DC2626', action:'DJ + EG schedule an extra check-in this quarter, dig into why the score is light.'}
+];
+function tierFor(pct){
+  for(const t of TIERS){ if(pct >= t.min) return t; }
+  return TIERS[TIERS.length-1];
+}
+function maxDeliveryForQuarter(q){
+  let max = 0;
+  CADENCE.forEach(function(group){
+    if(group.quarter !== q) return;
+    group.items.forEach(function(item){
+      if(!item.scoring) return;
+      max += Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
+    });
+  });
+  return max;
+}
+
+let currentCustomer = null;
+function emptyContract(){
+  return {quantity:'', signDate:'', shippedDate:'', installDate:'', expirationDate:''};
+}
+function defaultCustomerState(){
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+}
+function contract0(){
+  return (state.info.contracts && state.info.contracts[0]) || emptyContract();
+}
+let state = defaultCustomerState();
+let saveTimer = null;
+let selectedQuarter = 'q1';
+
+function ownerPills(owners){
+  return owners.map(function(o){ return '<span class="pill" style="background:'+OWNER_COLOR[o]+'">'+OWNER_LABEL[o]+'</span>'; }).join('');
+}
+
+function renderCadence(){
+  const el = document.getElementById('panel-cadence');
+  let html = '';
+  CADENCE.forEach(function(group){
+    html += '<div class="phase-header">'+QUARTER_LABEL[group.quarter]+' · '+group.phase+'</div>';
+    group.items.forEach(function(item){
+      const selIdx = state.deliveries[item.id] || 0;
+      const isAuto = AUTOSCORE_ITEM_IDS.indexOf(item.id) !== -1;
+      let scoreControl;
+      if(item.scoring){
+        scoreControl = '<select class="status-select" data-id="'+item.id+'">'+
+          item.scoring.map(function(opt, i){ return '<option value="'+i+'" '+(i===selIdx?'selected':'')+'>'+opt.label+'</option>'; }).join('')+
+          '</select>';
+      } else {
+        scoreControl = '<span class="no-score-note">No points for this step</span>';
+      }
+      html += ''+
+        '<div class="row">'+
+          '<div class="row-body">'+
+            '<div class="row-top">'+
+              '<span class="row-time">'+item.time+'</span>'+
+              '<span class="row-title">'+item.task+'</span>'+
+              ownerPills(item.owners)+
+              (item.win?'<span class="tag-win">Quarterly win</span>':'')+
+              (item.flexible?'<span class="tag-flex">Flexible</span>':'')+
+              (item.proposed?'<span class="tag-proposed">Proposed</span>':'')+
+              scoreControl+
+              (isAuto?'<span class="autoscore-badge">'+(selIdx>0?'auto-scored':'auto')+'</span>':'')+
+            '</div>'+
+            (item.unspecified?'<div class="unspecified-note">Points not specified, defaulted to match other one-time deliverables, confirm.</div>':'')+
+            '<div class="field-label">Internal — what needs to happen</div>'+
+            '<div class="field-text">'+item.internal+'</div>'+
+            '<div class="field-label">Customer sees</div>'+
+            '<div class="field-text customer">'+item.customer+'</div>'+
+          '</div>'+
+        '</div>';
+    });
+  });
+  el.innerHTML = html;
+}
+
+function renderMilestones(){
+  const el = document.getElementById('panel-milestones');
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Expansion and renewal aren\'t tied to a fixed month, they land whenever the customer is ready. Log them in whichever quarter they actually happen.</div>';
+  html += '<div class="checkpoint-bar" style="margin-bottom:14px;"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Logging to</label> <select id="bonus-quarter-select">'+
+    Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
+    '</select></div>';
+  MILESTONES.forEach(function(item){
+    html += ''+
+      '<div class="bonus-row">'+
+        '<div class="bonus-info">'+
+          '<div class="row-top"><span class="row-title">'+item.trigger+'</span>'+ownerPills(item.owners)+'<span class="pts-note">+'+item.points+' pts</span></div>'+
+          '<div class="field-text">'+item.action+' <span style="color:var(--ink-soft)">— '+item.play+'</span></div>'+
+          '<div class="cap-note">'+item.cap+'</div>'+
+        '</div>'+
+        '<div class="bonus-add"><button data-log-id="'+item.id+'">+ Log for '+QUARTER_LABEL[selectedQuarter]+'</button></div>'+
+      '</div>';
+  });
+
+  html += '<div class="log-list"><div class="field-label">Bonus log — '+QUARTER_LABEL[selectedQuarter]+'</div>';
+  const log = state.bonusLog[selectedQuarter] || [];
+  if(log.length===0){
+    html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet this quarter.</div>';
+  } else {
+    log.forEach(function(entry, idx){
+      const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
+      html += '<div class="log-item"><span>'+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b></span><button data-remove-log="'+idx+'">Remove</button></div>';
+    });
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  document.getElementById('bonus-quarter-select').addEventListener('change', function(e){
+    selectedQuarter = e.target.value;
+    renderMilestones();
+  });
+  el.querySelectorAll('[data-log-id]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+      const msId = btn.dataset.logId;
+      const ms = MILESTONES.find(function(m){ return m.id===msId; });
+      state.bonusLog[selectedQuarter].push({msId:msId, points:ms.points, ts:Date.now()});
+      scheduleSave();
+      renderMilestones();
+      updateProgress();
+    });
+  });
+  el.querySelectorAll('[data-remove-log]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const idx = parseInt(btn.dataset.removeLog, 10);
+      state.bonusLog[selectedQuarter].splice(idx, 1);
+      scheduleSave();
+      renderMilestones();
+      updateProgress();
+    });
+  });
+}
+
+function renderPlays(){
+  const el = document.getElementById('panel-plays');
+  let html = '<div class="play-grid">';
+  PLAYS.forEach(function(p){
+    html += ''+
+      '<div class="play-card">'+
+        '<h3>'+p.name+'</h3>'+
+        '<div class="field-text">'+p.what+'</div>'+
+        '<div class="field-label">When to use</div>'+
+        '<div class="field-text">'+p.when+'</div>'+
+        '<div class="field-label">Owner</div>'+
+        '<div class="field-text">'+p.owner+'</div>'+
+      '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+const AUTOSCORE_RULES = [
+  {itemId:'onboarding-meeting', from:function(){return contract0().signDate;}, to:function(){return state.info.onboardingMeetingDate;}, tiers:[{max:14, idx:1}], elseIdx:2},
+  {itemId:'shipping', from:function(){return contract0().signDate;}, to:function(){return contract0().shippedDate;}, tiers:[{max:7, idx:1},{max:14, idx:2}], elseIdx:3},
+  {itemId:'install-timing', from:function(){return contract0().shippedDate;}, to:function(){return contract0().installDate;}, tiers:[{max:7, idx:1},{max:14, idx:2}], elseIdx:3},
+  {itemId:'day7-flag', from:function(){return contract0().installDate;}, to:function(){return state.info.firstFlagDate;}, tiers:[{max:2, idx:1},{max:7, idx:2}], elseIdx:3},
+  {itemId:'day7-meeting', from:function(){return contract0().installDate;}, to:function(){return state.info.checkinDate;}, tiers:[{max:7, idx:1}], elseIdx:2},
+  {itemId:'day30-survey', from:function(){return contract0().installDate;}, to:function(){return state.info.survey1SentDate;}, tiers:[{max:30, idx:1}], elseIdx:2}
+];
+const AUTOSCORE_ITEM_IDS = AUTOSCORE_RULES.map(function(r){ return r.itemId; });
+
+function daysBetween(a, b){
+  if(!a || !b) return null;
+  const d1 = new Date(a), d2 = new Date(b);
+  if(isNaN(d1) || isNaN(d2)) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function runAutoscore(){
+  let changed = 0;
+  AUTOSCORE_RULES.forEach(function(rule){
+    const days = daysBetween(rule.from(), rule.to());
+    if(days === null) return;
+    let idx = rule.elseIdx;
+    for(const t of rule.tiers){ if(days <= t.max){ idx = t.idx; break; } }
+    if(state.deliveries[rule.itemId] !== idx) changed++;
+    state.deliveries[rule.itemId] = idx;
+  });
+  return changed;
+}
+
+function deliveryPointsForQuarter(q){
+  let earned = 0;
+  CADENCE.forEach(function(group){
+    if(group.quarter !== q) return;
+    group.items.forEach(function(item){
+      if(!item.scoring) return;
+      const idx = state.deliveries[item.id] || 0;
+      earned += (item.scoring[idx] ? item.scoring[idx].points : 0);
+    });
+  });
+  return earned;
+}
+function bonusPointsForQuarter(q){
+  const log = state.bonusLog[q] || [];
+  return log.reduce(function(sum, e){ return sum + e.points; }, 0);
+}
+
+function contractSummary(contracts){
+  contracts = contracts || [];
+  const totalSidekicks = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantity, 10) || 0); }, 0);
+  const firstSigned = contracts.map(function(c){ return c.signDate; }).filter(Boolean).sort()[0] || '';
+  const expirations = contracts.map(function(c){ return c.expirationDate; }).filter(Boolean).sort();
+  const nextRenewal = expirations[0] || '';
+  return {totalSidekicks:totalSidekicks, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length};
+}
+
+function renderScorecard(){
+  const el = document.getElementById('panel-scorecard');
+  if(!currentCustomer){
+    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">Pick or add a customer above to see its scorecard.</div></div></div>';
+    return;
+  }
+  const del = deliveryPointsForQuarter(selectedQuarter);
+  const bonus = bonusPointsForQuarter(selectedQuarter);
+  const total = del + bonus;
+  const maxDel = maxDeliveryForQuarter(selectedQuarter);
+  const pct = maxDel > 0 ? Math.round((total/maxDel)*100) : 0;
+  const tier = tierFor(pct);
+
+  let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="score-quarter-select">'+
+    Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
+    '</select></div>';
+
+  const cs = contractSummary(state.info.contracts);
+  const infoBits = [];
+  if(cs.totalSidekicks) infoBits.push(cs.totalSidekicks+' Sidekicks across '+cs.count+' contract'+(cs.count===1?'':'s'));
+  if(cs.firstSigned) infoBits.push('Signed '+cs.firstSigned);
+  if(cs.nextRenewal) infoBits.push('Next renewal '+cs.nextRenewal);
+  const typeKey = state.info.customerType;
+  const typeBadge = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:10px;padding:3px 9px;margin-left:8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '';
+
+  html += '<div class="score-hero">'+
+    '<div class="eyebrow">'+currentCustomer+' · '+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
+    (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
+    '<div class="score-grid">'+
+      '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
+      '<div class="score-block"><div class="lbl">Bonus points</div><div class="val">+'+bonus+'</div></div>'+
+      '<div class="score-block"><div class="lbl">% of quarter max</div><div class="val">'+pct+'%</div></div>'+
+      '<div class="score-block"><div class="lbl">Tier</div><span class="tier-badge" style="background:'+tier.color+'">'+tier.label+'</span></div>'+
+    '</div>'+
+  '</div>';
+
+  html += '<table class="tiertable"><thead><tr><th>Tier</th><th>% of quarter max ≥</th><th>What we do</th></tr></thead><tbody>';
+  TIERS.forEach(function(t){
+    html += '<tr class="'+(t.key===tier.key?'current-tier':'')+'"><td><span class="tier-badge" style="background:'+t.color+';font-size:10px;padding:3px 9px;">'+t.label+'</span></td><td class="num">'+t.min+'%+</td><td>'+t.action+'</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
+  Object.keys(QUARTER_LABEL).forEach(function(q){
+    const d = deliveryPointsForQuarter(q);
+    const b = bonusPointsForQuarter(q);
+    const m = maxDeliveryForQuarter(q);
+    const t = d + b;
+    const p = m > 0 ? Math.round((t/m)*100) : 0;
+    const tq = tierFor(p);
+    html += '<tr><td>'+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+b+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
+  });
+  html += '</tbody></table>';
+
+  el.innerHTML = html;
+  document.getElementById('score-quarter-select').addEventListener('change', function(e){
+    selectedQuarter = e.target.value;
+    renderScorecard();
+  });
+}
+
+let leaderboardQuarter = 'q1';
+
+const WIN_ITEM_BY_QUARTER = {q1:'q1win', q2:'q2win', q3:'q3win', q4:'q4win'};
+function lastWinQuarter(deliveries){
+  const order = ['q4','q3','q2','q1'];
+  for(const q of order){
+    const itemId = WIN_ITEM_BY_QUARTER[q];
+    if(deliveries[itemId] === 1) return QUARTER_LABEL[q];
+  }
+  return '—';
+}
+
+async function renderLeaderboard(){
+  const el = document.getElementById('panel-leaderboard');
+  el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading customers…</div>';
+
+  const list = await loadCustomersList();
+  if(list.length===0){
+    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">No customers added yet. Add one from the bar above.</div></div></div>';
+    return;
+  }
+
+  const liveState = state, liveCustomer = currentCustomer;
+  const rows = await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    const savedState = state, savedCustomer = currentCustomer;
+    state = s;
+    const d = deliveryPointsForQuarter(leaderboardQuarter);
+    const b = bonusPointsForQuarter(leaderboardQuarter);
+    const lastWin = lastWinQuarter(s.deliveries || {});
+    state = savedState;
+    const m = maxDeliveryForQuarter(leaderboardQuarter);
+    const total = d + b;
+    const pct = m > 0 ? Math.round((total/m)*100) : 0;
+    const tier = tierFor(pct);
+    const cs = contractSummary(s.info.contracts);
+    const c0 = (s.info.contracts && s.info.contracts[0]) || {};
+    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0};
+  }));
+
+  rows.sort(function(a,b){ return b.pct - a.pct; });
+
+  let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="leaderboard-quarter-select">'+
+    Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===leaderboardQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
+    '</select></div>';
+
+  html += '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
+    '<th>#</th><th>Customer</th><th>Type</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Next renewal</th><th>Last win Q</th>'+
+    '<th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th><th>Tier</th>'+
+    '</tr></thead><tbody>';
+  rows.forEach(function(r, i){
+    const typeKey = r.info.customerType;
+    const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
+    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td>'+
+      '<td class="num">'+(r.cs.totalSidekicks||'—')+'</td>'+
+      '<td class="num">'+r.cs.count+'</td>'+
+      '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
+      '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
+      '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
+      '<td class="num">'+(r.info.onboardingMeetingDate||'—')+'</td>'+
+      '<td class="num">'+(r.info.firstFlagDate||'—')+'</td>'+
+      '<td class="num">'+(r.info.checkinDate||'—')+'</td>'+
+      '<td class="num">'+(r.info.survey1SentDate||'—')+'</td>'+
+      '<td class="num">'+(r.cs.nextRenewal||'—')+'</td>'+
+      '<td class="num">'+r.lastWin+'</td>'+
+      '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.bonus+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td>'+
+      '<td><span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  el.innerHTML = html;
+  document.getElementById('leaderboard-quarter-select').addEventListener('change', function(e){
+    leaderboardQuarter = e.target.value;
+    renderLeaderboard();
+  });
+}
+
+function flashSaveStatus(msg){
+  const status = document.getElementById('save-status');
+  status.textContent = msg;
+  setTimeout(function(){ if(status.textContent===msg) status.textContent=''; }, 2000);
+}
+
+function updateProgress(){
+  const active = document.querySelector('.tab.active').dataset.panel;
+  const line = document.getElementById('progress-line');
+  if(active==='scorecard' || active==='milestones'){
+    line.innerHTML = currentCustomer ? 'Working on <b>'+currentCustomer+'</b>' : 'Pick a customer to start scoring';
+  } else if(active==='cadence'){
+    const totalItems = CADENCE.reduce(function(n,g){return n+g.items.filter(function(i){return i.scoring;}).length;},0);
+    const scored = Object.keys(state.deliveries).filter(function(k){ return state.deliveries[k]; }).length;
+    line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+currentCustomer+'</b>':'');
+  } else if(active==='leaderboard'){
+    line.innerHTML = 'Every saved customer, ranked by % of quarter max';
+  } else {
+    line.innerHTML = 'Reference library, nothing to score here';
+  }
+}
+
+function renderCustomerInfo(){
+  document.getElementById('info-customer-type').value = state.info.customerType || '';
+  document.getElementById('info-customer-type').disabled = !currentCustomer;
+  document.getElementById('info-onboarding-date').value = state.info.onboardingMeetingDate || '';
+  document.getElementById('info-flag-date').value = state.info.firstFlagDate || '';
+  document.getElementById('info-checkin-date').value = state.info.checkinDate || '';
+  document.getElementById('info-survey1-date').value = state.info.survey1SentDate || '';
+  const disabled = !currentCustomer;
+  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date'].forEach(function(id){
+    document.getElementById(id).disabled = disabled;
+  });
+  renderContracts();
+}
+
+function renderContracts(){
+  const el = document.getElementById('contracts-list');
+  const contracts = state.info.contracts || [];
+  let html = '';
+  contracts.forEach(function(c, i){
+    html += ''+
+      '<div class="contract-row">'+
+        '<div class="info-field"><label>Contract '+(i+1)+' · qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantity" value="'+(c.quantity||'')+'" placeholder="0" '+(!currentCustomer?'disabled':'')+'></div>'+
+        '<div class="info-field"><label>Sign date</label><input type="date" data-contract-index="'+i+'" data-field="signDate" value="'+(c.signDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
+        '<div class="info-field"><label>Shipped date</label><input type="date" data-contract-index="'+i+'" data-field="shippedDate" value="'+(c.shippedDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
+        '<div class="info-field"><label>Install date</label><input type="date" data-contract-index="'+i+'" data-field="installDate" value="'+(c.installDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
+        '<div class="info-field"><label>Contract end date</label><input type="date" data-contract-index="'+i+'" data-field="expirationDate" value="'+(c.expirationDate||'')+'" '+(!currentCustomer?'disabled':'')+'></div>'+
+        (contracts.length>1 ? '<button class="remove-contract" data-remove-contract="'+i+'" '+(!currentCustomer?'disabled':'')+'>Remove</button>' : '<span></span>')+
+      '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderAll(){
+  renderCustomerInfo();
+  renderCadence();
+  renderMilestones();
+  renderPlays();
+  renderScorecard();
+  updateProgress();
+}
+
+async function loadCustomersList(){
+  try{ const res = await window.storage.get('pep-customers'); return res ? JSON.parse(res.value) : []; }
+  catch(e){ return []; }
+}
+async function saveCustomersList(list){
+  try{ await window.storage.set('pep-customers', JSON.stringify(list)); }catch(e){}
+}
+function customerStorageKey(name){
+  const slug = (name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return 'pep-customer:'+(slug || 'customer');
+}
+async function loadCustomerState(name){
+  try{
+    let res = await window.storage.get(customerStorageKey(name)).catch(function(){ return null; });
+    let migrated = false;
+    if(!res){
+      // fall back to the old raw-name key used before keys were sanitized
+      res = await window.storage.get('pep-customer:'+name).catch(function(){ return null; });
+      if(res) migrated = true;
+    }
+    if(!res) return defaultCustomerState();
+    const parsed = JSON.parse(res.value);
+    const merged = Object.assign(defaultCustomerState(), parsed, {info: Object.assign(defaultCustomerState().info, parsed.info || {})});
+    const oldInfo = parsed.info || {};
+    const hasOldFlatFields = oldInfo.signDate || oldInfo.hardwareShippedDate || oldInfo.installDate || oldInfo.expirationDate || oldInfo.sidekicks;
+    const hasContracts = oldInfo.contracts && oldInfo.contracts.length;
+    if(hasOldFlatFields && !hasContracts){
+      merged.info.contracts = [{
+        quantity: oldInfo.sidekicks || '',
+        signDate: oldInfo.signDate || '',
+        shippedDate: oldInfo.hardwareShippedDate || '',
+        installDate: oldInfo.installDate || '',
+        expirationDate: oldInfo.expirationDate || ''
+      }];
+    }
+    if(!merged.info.contracts || merged.info.contracts.length===0) merged.info.contracts = [emptyContract()];
+    if(migrated){
+      window.storage.set(customerStorageKey(name), JSON.stringify(merged)).catch(function(){});
+    }
+    return merged;
+  }catch(e){ return defaultCustomerState(); }
+}
+async function saveCustomerState(name, s){
+  try{
+    flashSaveStatus('saving…');
+    await window.storage.set(customerStorageKey(name), JSON.stringify(s));
+    flashSaveStatus('saved');
+  }catch(e){ flashSaveStatus('save failed'); }
+}
+function scheduleSave(){
+  if(!currentCustomer) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function(){ saveCustomerState(currentCustomer, state); }, 80);
+}
+async function flushSave(){
+  if(!currentCustomer) return;
+  clearTimeout(saveTimer);
+  await saveCustomerState(currentCustomer, state);
+}
+async function populateSelect(list){
+  const sel = document.getElementById('customer-select');
+  sel.innerHTML = '<option value="">Select a customer…</option>' + list.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join('');
+}
+
+document.getElementById('add-customer').addEventListener('click', async function(){
+  const input = document.getElementById('new-customer-name');
+  const name = input.value.trim();
+  if(!name) return;
+  const list = await loadCustomersList();
+  if(!list.includes(name)){ list.push(name); await saveCustomersList(list); await populateSelect(list); }
+  document.getElementById('customer-select').value = name;
+  input.value = '';
+  document.getElementById('customer-select').dispatchEvent(new Event('change'));
+});
+
+document.getElementById('customer-select').addEventListener('change', async function(e){
+  await flushSave();
+  const name = e.target.value;
+  currentCustomer = name || null;
+  state = currentCustomer ? await loadCustomerState(currentCustomer) : defaultCustomerState();
+  if(currentCustomer) runAutoscore();
+  renderAll();
+});
+
+function afterDateEdit(){
+  const changed = runAutoscore();
+  renderCadence();
+  if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+  if(changed) flashSaveStatus('autoscored '+changed+' task'+(changed===1?'':'s'));
+  scheduleSave();
+}
+
+const ONCE_FIELD_MAP = {
+  'info-onboarding-date':'onboardingMeetingDate',
+  'info-flag-date':'firstFlagDate',
+  'info-checkin-date':'checkinDate',
+  'info-survey1-date':'survey1SentDate'
+};
+Object.keys(ONCE_FIELD_MAP).forEach(function(id){
+  document.getElementById(id).addEventListener('change', function(e){
+    if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
+    state.info[ONCE_FIELD_MAP[id]] = e.target.value;
+    afterDateEdit();
+  });
+});
+
+document.getElementById('info-customer-type').addEventListener('change', function(e){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
+  state.info.customerType = e.target.value;
+  scheduleSave();
+});
+
+document.getElementById('contracts-list').addEventListener('change', function(e){
+  if(!e.target.matches('[data-contract-index]')) return;
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+  const idx = parseInt(e.target.dataset.contractIndex, 10);
+  const field = e.target.dataset.field;
+  state.info.contracts[idx][field] = e.target.value;
+  if(field==='quantity'){ scheduleSave(); return; }
+  afterDateEdit();
+});
+document.getElementById('contracts-list').addEventListener('click', function(e){
+  if(!e.target.matches('[data-remove-contract]')) return;
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+  const idx = parseInt(e.target.dataset.removeContract, 10);
+  state.info.contracts.splice(idx, 1);
+  runAutoscore();
+  renderContracts();
+  renderCadence();
+  if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+  scheduleSave();
+});
+document.getElementById('add-contract-btn').addEventListener('click', function(){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+  state.info.contracts.push(emptyContract());
+  renderContracts();
+  scheduleSave();
+});
+document.getElementById('autoscore-btn').addEventListener('click', function(){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+  const changed = runAutoscore();
+  renderCadence();
+  if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+  flashSaveStatus(changed ? 'autoscored '+changed+' task'+(changed===1?'':'s') : 'nothing new to score');
+  scheduleSave();
+});
+
+document.querySelectorAll('.tab').forEach(function(tab){
+  tab.addEventListener('click', async function(){
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('panel-'+tab.dataset.panel).classList.add('active');
+    await flushSave();
+    if(tab.dataset.panel==='scorecard') renderScorecard();
+    if(tab.dataset.panel==='milestones') renderMilestones();
+    if(tab.dataset.panel==='leaderboard') renderLeaderboard();
+    updateProgress();
+  });
+});
+
+document.addEventListener('change', function(e){
+  if(e.target.matches('.status-select')){
+    if(!currentCustomer){ flashSaveStatus('pick a customer to save'); e.target.value='0'; return; }
+    const id = e.target.dataset.id;
+    state.deliveries[id] = parseInt(e.target.value, 10);
+    scheduleSave();
+    updateProgress();
+  }
+});
+
+let pepAppInitialized = false;
+window.pepAppInit = async function(){
+  if(pepAppInitialized) return;
+  pepAppInitialized = true;
+  renderAll();
+  const list = await loadCustomersList();
+  await populateSelect(list);
+};
+</script>
+</body>
+</html>
