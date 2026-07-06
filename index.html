@@ -130,6 +130,14 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 .gh-note{font-size:12px;color:var(--ink-soft);margin:10px 0;line-height:1.5;}
 #gh-connect-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin-left:10px;}
 .gh-blocked{background:#FFF7E8;border:1px solid #F2D08A;border-radius:10px;padding:16px 18px;margin-bottom:14px;font-size:13px;line-height:1.6;}
+
+.viewer-edit-only{display:contents;}
+body.viewer-mode .viewer-edit-only,
+body.viewer-mode .customer-info-bar,
+body.viewer-mode .contracts-panel,
+body.viewer-mode .tab[data-panel="cadence"],
+body.viewer-mode .tab[data-panel="milestones"],
+body.viewer-mode .tab[data-panel="plays"]{display:none;}
 </style>
 </head>
 <body>
@@ -155,6 +163,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
       <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write"></div>
     </div>
     <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens with <b>Contents: Read & write</b> access to this one repo. Saved only in this browser — never written to the file itself.</p>
+    <div class="info-field" style="flex-direction:row;align-items:center;gap:6px;margin:10px 0;">
+      <input type="checkbox" id="gh-viewer-mode" style="width:auto;">
+      <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Viewer mode — read-only, hides customer info, contracts, and the Fixed Cadence / Bonus Log tabs</label>
+    </div>
     <button id="gh-connect-btn" class="primary">Save &amp; connect</button>
     <span id="gh-connect-status"></span>
   </div>
@@ -163,10 +175,13 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
   <div class="customer-bar">
     <label>Customer</label>
     <select id="customer-select"></select>
-    <input type="text" id="new-customer-name" placeholder="New customer name">
-    <button id="add-customer">Add customer</button>
-    <label>Type</label>
-    <select id="info-customer-type">
+    <span class="viewer-edit-only">
+      <input type="text" id="new-customer-name" placeholder="New customer name">
+      <button id="add-customer">Add customer</button>
+    </span>
+    <span class="viewer-edit-only">
+      <label>Type</label>
+      <select id="info-customer-type">
       <option value="">—</option>
       <option value="core-enterprise">Core ICP - Enterprise</option>
       <option value="core-midtier">Core ICP - Mid-tier</option>
@@ -175,6 +190,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
       <option value="affiliate">Affiliate</option>
       <option value="buildings">Buildings ("HVAC as a service")</option>
     </select>
+    </span>
     <span id="save-status"></span>
   </div>
 
@@ -341,6 +357,18 @@ function setGhStatus(msg, cls){
   el.className = 'gh-status'+(cls?' '+cls:'');
 }
 
+function applyViewerMode(on){
+  document.body.classList.toggle('viewer-mode', !!on);
+  if(on){
+    const activeTab = document.querySelector('.tab.active');
+    const hiddenPanels = ['cadence','milestones','plays'];
+    if(activeTab && hiddenPanels.indexOf(activeTab.dataset.panel) !== -1){
+      const scorecardTab = document.querySelector('.tab[data-panel="scorecard"]');
+      if(scorecardTab) scorecardTab.click();
+    }
+  }
+}
+
 async function tryConnectGh(cfg, silent){
   GH.owner = cfg.owner; GH.repo = cfg.repo; GH.path = cfg.path; GH.pat = cfg.pat;
   GH.cache = null; GH.sha = null;
@@ -350,6 +378,7 @@ async function tryConnectGh(cfg, silent){
     setGhStatus('Connected — '+cfg.owner+'/'+cfg.repo, 'connected');
     document.getElementById('app-root').style.display = '';
     document.getElementById('gh-panel').style.display = 'none';
+    applyViewerMode(cfg.viewerMode);
     return true;
   }catch(e){
     setGhStatus(e.auth ? 'GitHub auth failed, check token/permissions' : 'GitHub connection failed', 'error');
@@ -372,15 +401,24 @@ document.getElementById('gh-disconnect-btn').addEventListener('click', function(
   document.getElementById('gh-repo').value='';
   document.getElementById('gh-path').value='';
   document.getElementById('gh-pat').value='';
+  document.getElementById('gh-viewer-mode').checked = false;
+  applyViewerMode(false);
   document.getElementById('app-root').style.display = 'none';
   setGhStatus('Not connected to GitHub');
+});
+document.getElementById('gh-viewer-mode').addEventListener('change', function(e){
+  applyViewerMode(e.target.checked);
+  const cfg = loadGhConfig() || {};
+  cfg.viewerMode = e.target.checked;
+  saveGhConfig(cfg);
 });
 document.getElementById('gh-connect-btn').addEventListener('click', async function(){
   const cfg = {
     owner: document.getElementById('gh-owner').value.trim(),
     repo: document.getElementById('gh-repo').value.trim(),
     path: document.getElementById('gh-path').value.trim() || 'data/pep-scorecard.json',
-    pat: document.getElementById('gh-pat').value.trim()
+    pat: document.getElementById('gh-pat').value.trim(),
+    viewerMode: document.getElementById('gh-viewer-mode').checked
   };
   if(!cfg.owner || !cfg.repo || !cfg.pat){
     document.getElementById('gh-connect-status').textContent = 'owner, repo, and token are required';
@@ -402,6 +440,7 @@ document.getElementById('gh-connect-btn').addEventListener('click', async functi
     document.getElementById('gh-repo').value = cfg.repo;
     document.getElementById('gh-path').value = cfg.path || '';
     document.getElementById('gh-pat').value = cfg.pat;
+    document.getElementById('gh-viewer-mode').checked = !!cfg.viewerMode;
     const ok = await tryConnectGh(cfg, true);
     if(ok && window.pepAppInit) window.pepAppInit();
   }
