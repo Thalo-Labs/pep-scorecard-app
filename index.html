@@ -153,16 +153,13 @@ body.viewer-mode .tab[data-panel="plays"]{display:none;}
 
   <div class="gh-panel" id="gh-panel" style="display:none;">
     <div class="info-header">
-      <span class="field-label" style="margin:0;">GitHub sync — data is stored as a JSON file in a repo, shared by anyone with a token</span>
+      <span class="field-label" style="margin:0;">GitHub sync — data lives in Thalo-Labs/pep-scorecard-data, shared by anyone with a token</span>
       <button id="gh-disconnect-btn">Disconnect</button>
     </div>
     <div class="gh-fields">
-      <div class="info-field"><label>Repo owner</label><input type="text" id="gh-owner" placeholder="Thalo-Labs"></div>
-      <div class="info-field"><label>Repo name</label><input type="text" id="gh-repo" placeholder="pep-scorecard-data"></div>
-      <div class="info-field"><label>File path</label><input type="text" id="gh-path" placeholder="data/pep-scorecard.json"></div>
-      <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write"></div>
+      <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write for editors, contents:read for viewers"></div>
     </div>
-    <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens with <b>Contents: Read & write</b> access to this one repo. Saved only in this browser — never written to the file itself.</p>
+    <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens scoped to just the <b>Thalo-Labs/pep-scorecard-data</b> repo — <b>Contents: Read & write</b> to edit, <b>Contents: Read</b> if you only need to view. Saved only in this browser — never written to the file itself.</p>
     <div class="info-field" style="flex-direction:row;align-items:center;gap:6px;margin:10px 0;">
       <input type="checkbox" id="gh-viewer-mode" style="width:auto;">
       <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Viewer mode — read-only, hides customer info, contracts, and the Fixed Cadence / Bonus Log tabs</label>
@@ -241,7 +238,10 @@ body.viewer-mode .tab[data-panel="plays"]{display:none;}
    a single JSON file in a GitHub repo, read/written via the Contents API.
    Anyone with a token for the repo shares the same data. */
 
-const GH = {owner:'', repo:'', path:'', pat:'', sha:null, cache:null};
+const GH_OWNER = 'Thalo-Labs';
+const GH_REPO = 'pep-scorecard-data';
+const GH_PATH = 'data/pep-scorecard.json';
+const GH = {owner:GH_OWNER, repo:GH_REPO, path:GH_PATH, pat:'', sha:null, cache:null};
 const GH_CONFIG_KEY = 'pep-gh-config';
 
 function loadGhConfig(){
@@ -370,12 +370,12 @@ function applyViewerMode(on){
 }
 
 async function tryConnectGh(cfg, silent){
-  GH.owner = cfg.owner; GH.repo = cfg.repo; GH.path = cfg.path; GH.pat = cfg.pat;
+  GH.owner = GH_OWNER; GH.repo = GH_REPO; GH.path = GH_PATH; GH.pat = cfg.pat;
   GH.cache = null; GH.sha = null;
   installGithubStorageShim();
   try{
     await ghLoadFile();
-    setGhStatus('Connected — '+cfg.owner+'/'+cfg.repo, 'connected');
+    setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO, 'connected');
     document.getElementById('app-root').style.display = '';
     document.getElementById('gh-panel').style.display = 'none';
     applyViewerMode(cfg.viewerMode);
@@ -395,11 +395,8 @@ document.getElementById('gh-settings-btn').addEventListener('click', function(){
 });
 document.getElementById('gh-disconnect-btn').addEventListener('click', function(){
   clearGhConfig();
-  GH.owner=''; GH.repo=''; GH.path=''; GH.pat=''; GH.cache=null; GH.sha=null;
+  GH.pat=''; GH.cache=null; GH.sha=null;
   window.storage = undefined;
-  document.getElementById('gh-owner').value='';
-  document.getElementById('gh-repo').value='';
-  document.getElementById('gh-path').value='';
   document.getElementById('gh-pat').value='';
   document.getElementById('gh-viewer-mode').checked = false;
   applyViewerMode(false);
@@ -414,14 +411,11 @@ document.getElementById('gh-viewer-mode').addEventListener('change', function(e)
 });
 document.getElementById('gh-connect-btn').addEventListener('click', async function(){
   const cfg = {
-    owner: document.getElementById('gh-owner').value.trim(),
-    repo: document.getElementById('gh-repo').value.trim(),
-    path: document.getElementById('gh-path').value.trim() || 'data/pep-scorecard.json',
     pat: document.getElementById('gh-pat').value.trim(),
     viewerMode: document.getElementById('gh-viewer-mode').checked
   };
-  if(!cfg.owner || !cfg.repo || !cfg.pat){
-    document.getElementById('gh-connect-status').textContent = 'owner, repo, and token are required';
+  if(!cfg.pat){
+    document.getElementById('gh-connect-status').textContent = 'a token is required';
     return;
   }
   document.getElementById('gh-connect-status').textContent = 'connecting…';
@@ -435,10 +429,7 @@ document.getElementById('gh-connect-btn').addEventListener('click', async functi
 
 (async function initGhConnection(){
   const cfg = loadGhConfig();
-  if(cfg && cfg.owner && cfg.repo && cfg.pat){
-    document.getElementById('gh-owner').value = cfg.owner;
-    document.getElementById('gh-repo').value = cfg.repo;
-    document.getElementById('gh-path').value = cfg.path || '';
+  if(cfg && cfg.pat){
     document.getElementById('gh-pat').value = cfg.pat;
     document.getElementById('gh-viewer-mode').checked = !!cfg.viewerMode;
     const ok = await tryConnectGh(cfg, true);
