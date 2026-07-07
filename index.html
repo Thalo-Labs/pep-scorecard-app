@@ -118,6 +118,10 @@ table.leaderboard tr.this-customer{background:#FFF7E8;}
 .table-scroll{overflow-x:auto;border-radius:10px;}
 .table-scroll table.leaderboard{border-radius:0;}
 .rank{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
+.overdue{color:var(--t-warmup);font-weight:700;}
+.quarter-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--eg);color:#fff;letter-spacing:.03em;}
+.quarter-note{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+.quarter-mismatch{color:var(--t-ontrack);}
 
 footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-soft);}
 
@@ -193,6 +197,16 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <div class="info-field"><label>First flag date</label><input type="date" id="info-flag-date"></div>
     <div class="info-field"><label>Post-install check-in date</label><input type="date" id="info-checkin-date"></div>
     <div class="info-field"><label>Survey #1 sent date</label><input type="date" id="info-survey1-date"></div>
+    <div class="info-field"><label>Survey #1 — "supported by Thalo" score (1–5)</label>
+      <select id="info-survey1-score">
+        <option value="">— not answered —</option>
+        <option value="1">1 — Not supported</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5 — Very supported</option>
+      </select>
+    </div>
   </div>
 
   <div class="contracts-panel">
@@ -602,8 +616,7 @@ const MILESTONES = [
   {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:10, cap:'No cap'},
   {id:'ms-techvolume', trigger:'A tech hits an install/repair volume threshold', action:'Individual certificate or swag', owners:['dj'], play:'Certificates & Badges', points:10, cap:'No cap, log per tech'},
   {id:'ms-invite-user', trigger:'Customer invites a new user', action:'Adoption signal, no action needed beyond noting it', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap, log each new user invited'},
-  {id:'ms-notif-update', trigger:'Customer updates notification/alert preferences', action:'Adoption signal, they\'re engaging with the platform', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'},
-  {id:'ms-survey-response', trigger:'Customer responds to a survey', action:'Log it, follow up if the score is low', owners:['dj','eg'], play:'Adoption signal', points:5, cap:'No cap, log each survey response'}
+  {id:'ms-notif-update', trigger:'Customer updates notification/alert preferences', action:'Adoption signal, they\'re engaging with the platform', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'}
 ];
 
 const PLAYS = [
@@ -644,7 +657,7 @@ function emptyContract(){
   return {quantity:'', signDate:'', shippedDate:'', installDate:'', expirationDate:''};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -704,6 +717,13 @@ function renderMilestones(){
   html += '<div class="checkpoint-bar" style="margin-bottom:14px;"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Logging to</label> <select id="bonus-quarter-select">'+
     Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
     '</select></div>';
+  if(currentCustomer){
+    const actualQ = currentQuarterFor(state.info.contracts);
+    if(actualQ){
+      html += '<div class="quarter-note">'+currentCustomer+' is currently in <span class="quarter-badge">'+QUARTER_LABEL[actualQ]+'</span>'+
+        (actualQ!==selectedQuarter?' <span class="quarter-mismatch">— you\'re logging to '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+    }
+  }
   MILESTONES.forEach(function(item){
     html += ''+
       '<div class="bonus-row">'+
@@ -717,8 +737,16 @@ function renderMilestones(){
   });
 
   html += '<div class="log-list"><div class="field-label">Bonus log — '+QUARTER_LABEL[selectedQuarter]+'</div>';
+  if(selectedQuarter === 'q1' && state.info.survey1SupportScore){
+    const score = state.info.survey1SupportScore;
+    const pts = surveyBonusPoints(score);
+    html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
+      (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
+      '<span class="cap-note">auto, change the score above to update</span></div>';
+  }
   const log = state.bonusLog[selectedQuarter] || [];
-  if(log.length===0){
+  const hasAutoSurveyEntry = (selectedQuarter === 'q1' && !!state.info.survey1SupportScore);
+  if(log.length===0 && !hasAutoSurveyEntry){
     html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet this quarter.</div>';
   } else {
     log.forEach(function(entry, idx){
@@ -818,7 +846,9 @@ function deliveryPointsForQuarter(q){
 }
 function bonusPointsForQuarter(q){
   const log = state.bonusLog[q] || [];
-  return log.reduce(function(sum, e){ return sum + e.points; }, 0);
+  let total = log.reduce(function(sum, e){ return sum + e.points; }, 0);
+  if(q === 'q1') total += surveyBonusPoints(state.info.survey1SupportScore);
+  return total;
 }
 
 function contractSummary(contracts){
@@ -828,6 +858,41 @@ function contractSummary(contracts){
   const expirations = contracts.map(function(c){ return c.expirationDate; }).filter(Boolean).sort();
   const nextRenewal = expirations[0] || '';
   return {totalSidekicks:totalSidekicks, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length};
+}
+
+function surveyBonusPoints(score){
+  const n = parseInt(score, 10);
+  if(n === 5) return 5;
+  if(n === 4) return 4;
+  return 0;
+}
+
+function monthsSince(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr);
+  if(isNaN(d)) return null;
+  const now = new Date();
+  let months = (now.getFullYear()-d.getFullYear())*12 + (now.getMonth()-d.getMonth());
+  if(now.getDate() < d.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+function currentQuarterFor(contracts){
+  const cs = contractSummary(contracts);
+  const months = monthsSince(cs.firstSigned);
+  if(months === null) return null;
+  if(months < 3) return 'q1';
+  if(months < 6) return 'q2';
+  if(months < 9) return 'q3';
+  return 'q4';
+}
+
+function isRenewalOverdue(dateStr){
+  if(!dateStr) return false;
+  const d = new Date(dateStr);
+  if(isNaN(d)) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return d < today;
 }
 
 function renderScorecard(){
@@ -846,6 +911,12 @@ function renderScorecard(){
   let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="score-quarter-select">'+
     Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
     '</select></div>';
+
+  const actualQ = currentQuarterFor(state.info.contracts);
+  if(actualQ){
+    html += '<div class="quarter-note">'+currentCustomer+' is currently in <span class="quarter-badge">'+QUARTER_LABEL[actualQ]+'</span>'+
+      (actualQ!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+  }
 
   const cs = contractSummary(state.info.contracts);
   const infoBits = [];
@@ -928,7 +999,8 @@ async function renderLeaderboard(){
     const tier = tierFor(pct);
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
-    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0};
+    const currentQ = currentQuarterFor(s.info.contracts);
+    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQ:currentQ};
   }));
 
   rows.sort(function(a,b){ return b.pct - a.pct; });
@@ -938,14 +1010,16 @@ async function renderLeaderboard(){
     '</select></div>';
 
   html += '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
-    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Next renewal</th><th>Last win Q</th>'+
+    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Current Q</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Survey #1 score</th><th>Next renewal</th><th>Last win Q</th>'+
     '<th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r, i){
     const typeKey = r.info.customerType;
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
     const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>';
-    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td>'+
+    const currentQCell = r.currentQ ? '<span class="quarter-badge">'+QUARTER_LABEL[r.currentQ]+'</span>' : '—';
+    const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
+    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks||'—')+'</td>'+
       '<td class="num">'+r.cs.count+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
@@ -955,7 +1029,8 @@ async function renderLeaderboard(){
       '<td class="num">'+(r.info.firstFlagDate||'—')+'</td>'+
       '<td class="num">'+(r.info.checkinDate||'—')+'</td>'+
       '<td class="num">'+(r.info.survey1SentDate||'—')+'</td>'+
-      '<td class="num">'+(r.cs.nextRenewal||'—')+'</td>'+
+      '<td class="num">'+(r.info.survey1SupportScore||'—')+'</td>'+
+      '<td class="num'+(renewalOverdue?' overdue':'')+'">'+(r.cs.nextRenewal||'—')+'</td>'+
       '<td class="num">'+r.lastWin+'</td>'+
       '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.bonus+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
   });
@@ -997,8 +1072,9 @@ function renderCustomerInfo(){
   document.getElementById('info-flag-date').value = state.info.firstFlagDate || '';
   document.getElementById('info-checkin-date').value = state.info.checkinDate || '';
   document.getElementById('info-survey1-date').value = state.info.survey1SentDate || '';
+  document.getElementById('info-survey1-score').value = state.info.survey1SupportScore || '';
   const disabled = !currentCustomer || isViewerMode();
-  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date'].forEach(function(id){
+  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score'].forEach(function(id){
     document.getElementById(id).disabled = disabled;
   });
   renderContracts();
@@ -1142,6 +1218,15 @@ document.getElementById('info-customer-type').addEventListener('change', functio
   if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
   state.info.customerType = e.target.value;
   scheduleSave();
+});
+
+document.getElementById('info-survey1-score').addEventListener('change', function(e){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
+  state.info.survey1SupportScore = e.target.value;
+  scheduleSave();
+  const active = document.querySelector('.tab.active').dataset.panel;
+  if(active === 'scorecard') renderScorecard();
+  if(active === 'milestones') renderMilestones();
 });
 
 document.getElementById('contracts-list').addEventListener('change', function(e){
