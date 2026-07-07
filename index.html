@@ -30,11 +30,15 @@ h1{font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:700;margin:
 .autoscore-badge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;color:var(--eg);border:1px solid var(--eg);border-radius:4px;padding:1px 5px;margin-left:6px;}
 
 .contracts-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-.contract-row{display:grid;grid-template-columns:70px 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line);}
-.contract-row:last-of-type{border-bottom:none;}
+.contract-block{border-bottom:1px solid var(--line);padding:10px 0;}
+.contract-block:last-of-type{border-bottom:none;}
+.contract-row{display:grid;grid-template-columns:70px 1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;}
 .contract-row .info-field{min-width:0;}
 .contract-row .remove-contract{padding:7px 10px;font-size:10px;height:36px;}
 .contract-index{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);align-self:center;}
+.renewal-line{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.renewal-line label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);}
+.renewal-line select{flex:1;max-width:420px;}
 @media (max-width:800px){.contract-row{grid-template-columns:1fr 1fr;}}
 .info-summary{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#A8B3E8;margin-top:4px;}
 select,input[type=text],input[type=number]{font-family:'IBM Plex Sans',sans-serif;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);}
@@ -470,6 +474,7 @@ const CUSTOMER_TYPE_COLOR = {
   'buildings':'#E3C08D'
 };
 const QUARTER_LABEL = {q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4'};
+const QUARTER_COLOR = {q1:'#2F6FED', q2:'#0F766E', q3:'#EA580C', q4:'#DB2777'};
 
 function S(){ // scoring option builder, first option is always Pending
   const opts = [{label:'Pending', points:0}];
@@ -653,8 +658,11 @@ function maxDeliveryForQuarter(q){
 }
 
 let currentCustomer = null;
+function genContractId(){
+  return 'c-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+}
 function emptyContract(){
-  return {quantity:'', signDate:'', shippedDate:'', installDate:'', expirationDate:''};
+  return {id:genContractId(), quantity:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:''};
 }
 function defaultCustomerState(){
   return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
@@ -718,10 +726,10 @@ function renderMilestones(){
     Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
     '</select></div>';
   if(currentCustomer){
-    const actualQ = currentQuarterFor(state.info.contracts);
-    if(actualQ){
-      html += '<div class="quarter-note">'+currentCustomer+' is currently in <span class="quarter-badge">'+QUARTER_LABEL[actualQ]+'</span>'+
-        (actualQ!==selectedQuarter?' <span class="quarter-mismatch">— you\'re logging to '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+    const qInfo = currentQuarterInfo(state.info.contracts);
+    if(qInfo){
+      html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
+        (qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re logging to '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
     }
   }
   MILESTONES.forEach(function(item){
@@ -855,9 +863,28 @@ function contractSummary(contracts){
   contracts = contracts || [];
   const totalSidekicks = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantity, 10) || 0); }, 0);
   const firstSigned = contracts.map(function(c){ return c.signDate; }).filter(Boolean).sort()[0] || '';
-  const expirations = contracts.map(function(c){ return c.expirationDate; }).filter(Boolean).sort();
-  const nextRenewal = expirations[0] || '';
-  return {totalSidekicks:totalSidekicks, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length};
+
+  // A contract explicitly flagged as "renews" another one supersedes it —
+  // that older contract's end date shouldn't compete for "next renewal,"
+  // and it no longer counts as an open contract. Additions/expansions run
+  // alongside everything else and stay live/open.
+  const supersededIds = {};
+  contracts.forEach(function(c){
+    if(c.type === 'renewal' && c.renewsContractId) supersededIds[c.renewsContractId] = true;
+  });
+  const openContracts = contracts.filter(function(c){ return !supersededIds[c.id]; });
+  const liveExpirations = openContracts
+    .filter(function(c){ return c.expirationDate; })
+    .map(function(c){ return c.expirationDate; })
+    .sort();
+
+  const todayStr = new Date().toISOString().slice(0,10);
+  // Prefer the soonest upcoming date among the still-live contracts; only
+  // fall back to a past date if every live contract has already lapsed
+  // (so a fully overdue customer still shows something, still flagged red).
+  const upcoming = liveExpirations.filter(function(d){ return d >= todayStr; });
+  const nextRenewal = upcoming.length ? upcoming[0] : (liveExpirations[liveExpirations.length-1] || '');
+  return {totalSidekicks:totalSidekicks, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
 }
 
 function surveyBonusPoints(score){
@@ -877,14 +904,20 @@ function monthsSince(dateStr){
   return Math.max(0, months);
 }
 
-function currentQuarterFor(contracts){
+function currentQuarterInfo(contracts){
   const cs = contractSummary(contracts);
   const months = monthsSince(cs.firstSigned);
   if(months === null) return null;
-  if(months < 3) return 'q1';
-  if(months < 6) return 'q2';
-  if(months < 9) return 'q3';
-  return 'q4';
+  const year = Math.floor(months/12) + 1;
+  const qIdx = Math.floor((months % 12) / 3); // 0..3
+  const q = ['q1','q2','q3','q4'][qIdx];
+  return {year:year, q:q};
+}
+
+function quarterBadgeHtml(info){
+  if(!info) return '—';
+  const yearPrefix = info.year > 1 ? 'Y'+info.year+' ' : '';
+  return '<span class="quarter-badge" style="background:'+QUARTER_COLOR[info.q]+';">'+yearPrefix+QUARTER_LABEL[info.q]+'</span>';
 }
 
 function isRenewalOverdue(dateStr){
@@ -912,10 +945,10 @@ function renderScorecard(){
     Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
     '</select></div>';
 
-  const actualQ = currentQuarterFor(state.info.contracts);
-  if(actualQ){
-    html += '<div class="quarter-note">'+currentCustomer+' is currently in <span class="quarter-badge">'+QUARTER_LABEL[actualQ]+'</span>'+
-      (actualQ!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+  const qInfo = currentQuarterInfo(state.info.contracts);
+  if(qInfo){
+    html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
+      (qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
   }
 
   const cs = contractSummary(state.info.contracts);
@@ -999,8 +1032,8 @@ async function renderLeaderboard(){
     const tier = tierFor(pct);
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
-    const currentQ = currentQuarterFor(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQ:currentQ};
+    const currentQInfo = currentQuarterInfo(s.info.contracts);
+    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo};
   }));
 
   rows.sort(function(a,b){ return b.pct - a.pct; });
@@ -1017,11 +1050,12 @@ async function renderLeaderboard(){
     const typeKey = r.info.customerType;
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
     const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>';
-    const currentQCell = r.currentQ ? '<span class="quarter-badge">'+QUARTER_LABEL[r.currentQ]+'</span>' : '—';
+    const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
+    const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks||'—')+'</td>'+
-      '<td class="num">'+r.cs.count+'</td>'+
+      '<td class="num">'+contractCountCell+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
@@ -1087,13 +1121,29 @@ function renderContracts(){
   let html = '';
   contracts.forEach(function(c, i){
     html += ''+
+      '<div class="contract-block">'+
       '<div class="contract-row">'+
         '<div class="info-field"><label>Contract '+(i+1)+' · qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantity" value="'+(c.quantity||'')+'" placeholder="0" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Sign date</label><input type="date" data-contract-index="'+i+'" data-field="signDate" value="'+(c.signDate||'')+'" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Shipped date</label><input type="date" data-contract-index="'+i+'" data-field="shippedDate" value="'+(c.shippedDate||'')+'" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Install date</label><input type="date" data-contract-index="'+i+'" data-field="installDate" value="'+(c.installDate||'')+'" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Contract end date</label><input type="date" data-contract-index="'+i+'" data-field="expirationDate" value="'+(c.expirationDate||'')+'" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Type</label><select data-contract-index="'+i+'" data-field="type" '+disabledAttr+'>'+
+          '<option value="" '+(!c.type?'selected':'')+'>— unspecified —</option>'+
+          '<option value="addition" '+(c.type==='addition'?'selected':'')+'>Addition / expansion</option>'+
+          '<option value="renewal" '+(c.type==='renewal'?'selected':'')+'>Renewal</option>'+
+        '</select></div>'+
         (contracts.length>1 ? '<button class="remove-contract" data-remove-contract="'+i+'" '+disabledAttr+'>Remove</button>' : '<span></span>')+
+      '</div>'+
+      (c.type==='renewal' ? (
+        '<div class="renewal-line"><label>Renews</label><select data-contract-index="'+i+'" data-field="renewsContractId" '+disabledAttr+'>'+
+          '<option value="">— select which contract this renews —</option>'+
+          contracts.map(function(cc, j){
+            if(j===i) return '';
+            return '<option value="'+cc.id+'" '+(c.renewsContractId===cc.id?'selected':'')+'>Contract '+(j+1)+' — signed '+(cc.signDate||'—')+', ends '+(cc.expirationDate||'—')+'</option>';
+          }).join('')+
+        '</select></div>'
+      ) : '')+
       '</div>';
   });
   el.innerHTML = html;
@@ -1144,6 +1194,12 @@ async function loadCustomerState(name){
       }];
     }
     if(!merged.info.contracts || merged.info.contracts.length===0) merged.info.contracts = [emptyContract()];
+    // Backfill contracts saved before type/renewal-linking existed.
+    merged.info.contracts.forEach(function(c){
+      if(!c.id) c.id = genContractId();
+      if(c.type === undefined) c.type = '';
+      if(c.renewsContractId === undefined) c.renewsContractId = '';
+    });
     if(migrated){
       window.storage.set(customerStorageKey(name), JSON.stringify(merged)).catch(function(){});
     }
@@ -1236,6 +1292,13 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   const field = e.target.dataset.field;
   state.info.contracts[idx][field] = e.target.value;
   if(field==='quantity'){ scheduleSave(); return; }
+  if(field==='type' || field==='renewsContractId'){
+    if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
+    renderContracts();
+    if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+    scheduleSave();
+    return;
+  }
   afterDateEdit();
 });
 document.getElementById('contracts-list').addEventListener('click', function(e){
