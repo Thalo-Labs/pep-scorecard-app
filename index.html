@@ -125,6 +125,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 .gh-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);}
 .gh-status.connected{color:var(--good, #1E9E6B);}
 .gh-status.error{color:var(--action, #DC2626);}
+.gh-status.warning{color:var(--t-ontrack, #D97706);}
 .gh-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
 .gh-fields{display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:14px;margin-top:10px;}
 .gh-note{font-size:12px;color:var(--ink-soft);margin:10px 0;line-height:1.5;}
@@ -367,8 +368,12 @@ async function tryConnectGh(cfg, silent){
   GH.cache = null; GH.sha = null;
   installGithubStorageShim();
   try{
-    await ghLoadFile();
-    setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO, 'connected');
+    const cache = await ghLoadFile();
+    if(cache && Object.keys(cache).length === 0){
+      setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO+', but no data found at '+GH_PATH+'. If you expect existing customers, this token likely lacks access to the private repo (GitHub returns 404 instead of 403 for that) — double check its repository access.', 'warning');
+    } else {
+      setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO, 'connected');
+    }
     document.getElementById('app-root').style.display = '';
     document.getElementById('gh-panel').style.display = 'none';
     applyViewerMode(cfg.viewerMode);
