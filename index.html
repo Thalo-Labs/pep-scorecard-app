@@ -1144,8 +1144,6 @@ function renderScorecard(){
   });
 }
 
-let leaderboardQuarter = 'q1';
-
 const WIN_ITEM_BY_QUARTER = {q1:'q1win', q2:'q2win', q3:'q3win', q4:'q4win'};
 function escAttr(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -1184,29 +1182,33 @@ async function renderLeaderboard(){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     const savedState = state, savedCustomer = currentCustomer;
     state = s;
-    const d = deliveryPointsForQuarter(leaderboardQuarter);
-    const b = bonusPointsForQuarter(leaderboardQuarter);
-    const sb = scoredBonusForQuarter(leaderboardQuarter);
+    // Rank against each customer's OWN current quarter, not one global
+    // quarter picked from a dropdown — a Q1 customer and a Y2 Q1 customer
+    // both score against 'q1' data (there's no separate scoring rubric per
+    // year), "First 30 Days" scores as Q1 too (it's cosmetic-only, not a
+    // separate phase), and a customer with no start date yet scores 0 —
+    // Needs attention — rather than borrowing whatever quarter happened to
+    // be selected for someone else.
+    const currentQInfo = currentQuarterInfo(s.info.contracts);
+    const scoringQ = currentQInfo ? (currentQInfo.special === 'first30' ? 'q1' : currentQInfo.q) : null;
+    const d = scoringQ ? deliveryPointsForQuarter(scoringQ) : 0;
+    const b = scoringQ ? bonusPointsForQuarter(scoringQ) : 0;
+    const sb = scoringQ ? scoredBonusForQuarter(scoringQ) : 0;
+    const m = scoringQ ? maxDeliveryForQuarter(scoringQ) : 0;
+    const em = scoringQ ? effectiveMaxForQuarter(scoringQ) : 0;
     const lastWin = lastWinInfo(s.bonusLog || {});
     state = savedState;
-    const m = maxDeliveryForQuarter(leaderboardQuarter);
-    const em = effectiveMaxForQuarter(leaderboardQuarter);
     const total = d + sb;
     const pct = em > 0 ? Math.round((total/em)*100) : 0;
     const tier = tierFor(pct);
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
-    const currentQInfo = currentQuarterInfo(s.info.contracts);
     return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo};
   }));
 
   rows.sort(function(a,b){ return b.pct - a.pct; });
 
-  let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="leaderboard-quarter-select">'+
-    Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===leaderboardQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
-    '</select></div>';
-
-  html += '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
+  let html = '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
     '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Current Q</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Survey #1 score</th><th>Next renewal</th><th>Last win</th>'+
     '<th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th>'+
     '</tr></thead><tbody>';
@@ -1235,10 +1237,6 @@ async function renderLeaderboard(){
   html += '</tbody></table></div>';
 
   el.innerHTML = html;
-  document.getElementById('leaderboard-quarter-select').addEventListener('change', function(e){
-    leaderboardQuarter = e.target.value;
-    renderLeaderboard();
-  });
 }
 
 function flashSaveStatus(msg){
@@ -1264,7 +1262,7 @@ function updateProgress(){
     });
     line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+currentCustomer+'</b>':'');
   } else if(active==='leaderboard'){
-    line.innerHTML = 'Every saved customer, ranked by % of quarter max';
+    line.innerHTML = 'Every customer, ranked by current standing';
   } else {
     line.innerHTML = 'Reference library, nothing to score here';
   }
