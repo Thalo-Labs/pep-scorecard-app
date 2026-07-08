@@ -67,7 +67,6 @@ button.primary{background:var(--eg);border-color:var(--eg);color:#fff;}
 .row-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14.5px;}
 .pill{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:999px;color:#fff;letter-spacing:.02em;}
 .tag-flex{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--eg);text-transform:uppercase;}
-.tag-win{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:#EA580C;text-transform:uppercase;}
 .tag-proposed{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--t-ontrack);text-transform:uppercase;}
 .tag-new{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;color:var(--eg);text-transform:uppercase;border:1px solid var(--eg);border-radius:4px;padding:1px 4px;}
 .field-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:6px 0 2px;}
@@ -686,12 +685,12 @@ function renderCadence(){
     group.items.forEach(function(item){
       const selIdx = state.deliveries[item.id] || 0;
       const isAuto = AUTOSCORE_ITEM_IDS.indexOf(item.id) !== -1;
-      const isLogDerived = item.month !== undefined && (item.flexible || item.win);
+      const isLogDerived = item.month !== undefined && item.flexible;
       let scoreControl;
       if(isLogDerived){
         const donePoints = Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
         const log = state.bonusLog[group.quarter] || [];
-        const loggedDone = item.win ? (log.length > 0) : log.some(function(e){ return e.month === item.month; });
+        const loggedDone = log.some(function(e){ return e.month === item.month; });
         const oldManualDone = (item.scoring[selIdx] && item.scoring[selIdx].points > 0);
         if(loggedDone){
           scoreControl = '<span class="autoscore-badge" style="color:var(--t-strong);border-color:var(--t-strong);">✓ logged (+'+donePoints+')</span>';
@@ -714,14 +713,13 @@ function renderCadence(){
               '<span class="row-time">'+item.time+'</span>'+
               '<span class="row-title">'+item.task+'</span>'+
               ownerPills(item.owners)+
-              (item.win?'<span class="tag-win">Quarterly win</span>':'')+
               (item.flexible?'<span class="tag-flex">Flexible</span>':'')+
               (item.proposed?'<span class="tag-proposed">Proposed</span>':'')+
               scoreControl+
               (isAuto?'<span class="autoscore-badge">'+(selIdx>0?'auto-scored':'auto')+'</span>':'')+
             '</div>'+
             (item.unspecified?'<div class="unspecified-note">Points not specified, defaulted to match other one-time deliverables, confirm.</div>':'')+
-            (isLogDerived?'<div class="cap-note">Driven by the Wins & Bonus Log — log it there'+(item.win?' (any entry this quarter counts)':' with month '+item.month+' selected')+' and this updates on its own.</div>':'')+
+            (isLogDerived?'<div class="cap-note">Driven by the Wins & Bonus Log — log something there with month '+item.month+' selected and this updates on its own.</div>':'')+
             '<div class="field-label">Internal — what needs to happen</div>'+
             '<div class="field-text">'+item.internal+'</div>'+
             '<div class="field-label">Customer sees</div>'+
@@ -889,14 +887,16 @@ function runAutoscore(){
   return changed;
 }
 
-// Monthly touchpoints and quarterly wins are log-derived, not manually
-// checked — if it's worth a checkmark, it's because something was actually
-// logged in the Wins & Bonus Log for that month/quarter. One place to enter
-// it, so nothing gets marked twice (once as a checkbox, once as a log entry).
+// Monthly touchpoints are log-derived, not manually checked — if it's worth
+// a checkmark, it's because something was actually logged in the Wins &
+// Bonus Log for that month. One place to enter it. Quarterly review items
+// used to work this way too but were reverted to plain manual checkboxes —
+// "win" is a Wins & Bonus Log concept only now, not a Fixed Cadence one — so
+// this only ever runs for item.flexible items in practice.
 function derivedTouchpointPoints(item, q){
   const donePoints = Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
   const log = state.bonusLog[q] || [];
-  const loggedDone = item.win ? (log.length > 0) : log.some(function(e){ return e.month === item.month; });
+  const loggedDone = log.some(function(e){ return e.month === item.month; });
   // Grandfather in whatever was already marked Done the old manual way before
   // this item switched to log-derived scoring — otherwise every customer's
   // pre-existing Q2-Q4 completions would evaporate to 0 the moment this
@@ -912,7 +912,7 @@ function deliveryPointsForQuarter(q){
     if(group.quarter !== q) return;
     group.items.forEach(function(item){
       if(!item.scoring) return;
-      if(item.month !== undefined && (item.flexible || item.win)){
+      if(item.month !== undefined && item.flexible){
         earned += derivedTouchpointPoints(item, q);
         return;
       }
@@ -1257,7 +1257,7 @@ function updateProgress(){
     let scored = Object.keys(state.deliveries).filter(function(k){ return state.deliveries[k]; }).length;
     CADENCE.forEach(function(group){
       group.items.forEach(function(item){
-        if(item.scoring && item.month !== undefined && (item.flexible || item.win)){
+        if(item.scoring && item.month !== undefined && item.flexible){
           if(derivedTouchpointPoints(item, group.quarter) > 0) scored += 1;
         }
       });
