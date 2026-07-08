@@ -32,7 +32,7 @@ h1{font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:700;margin:
 .contracts-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
 .contract-block{border-bottom:1px solid var(--line);padding:10px 0;}
 .contract-block:last-of-type{border-bottom:none;}
-.contract-row{display:grid;grid-template-columns:70px 1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;}
+.contract-row{display:grid;grid-template-columns:64px 64px 1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;}
 .contract-row .info-field{min-width:0;}
 .contract-row .remove-contract{padding:7px 10px;font-size:10px;height:36px;}
 .contract-index{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);align-self:center;}
@@ -74,6 +74,7 @@ button.primary{background:var(--eg);border-color:var(--eg);color:#fff;}
 .field-text{font-size:13px;line-height:1.5;color:var(--ink);}
 .field-text.customer{font-style:italic;color:var(--ink-soft);}
 .status-select{margin-left:auto;font-weight:600;min-width:220px;}
+.play-select{font-weight:600;min-width:170px;}
 .no-score-note{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);font-style:italic;}
 .pts-note{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-soft);}
 .unspecified-note{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t-ontrack);margin-top:4px;}
@@ -238,7 +239,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   <div class="panel" id="panel-leaderboard"></div>
 
   <footer>
-    Each cadence task scores against its own timing rule, set the outcome from its dropdown. Bonus points come from logging real milestones and customer actions as they happen, no cap. Grading is now percentage of that quarter's own max delivery score, since Q1 has far more scorable tasks (max 45) than Q2–Q4 (max 12, 9, 12) — a flat point threshold would've made the later quarters nearly impossible to clear on delivery alone. Bonus points count as pure upside on top, so a quarter can run past 100%. "Formal renewal proposal delivered" (Month 11) didn't come with a specified point value, it's defaulted to 3/0 to match the other one-time deliverables, flag if that's wrong. Data syncs to GitHub, shared by anyone with a token for this repo.
+    Each cadence task scores against its own timing rule, set the outcome from its dropdown. Grading is now percentage of that quarter's own max delivery score, since Q1 has far more scorable tasks (max 45) than Q2–Q4 (max 12, 9, 12) — a flat point threshold would've made the later quarters nearly impossible to clear on delivery alone. Bonus points from the Wins & Bonus Log split into two tiers: major wins (15+ points — expansion order, before/after win, promoter) count in full, uncapped, so a real win visibly moves the score, even past 100%. Smaller signals (touchpoints, feature ships, feedback) count up to 50% of that quarter's delivery max, so routine activity alone can't inflate a thin quarter to Champion. "Formal renewal proposal delivered" (Month 11) didn't come with a specified point value, it's defaulted to 3/0 to match the other one-time deliverables, flag if that's wrong. Data syncs to GitHub, shared by anyone with a token for this repo.
   </footer>
   </div>
 </div>
@@ -536,31 +537,31 @@ const CADENCE = [
       scoring:S({label:'Sent by day 30 (+3)',points:3},{label:'Sent after day 30 (+1)',points:1})}
   ]},
   {phase:'Month 2', quarter:'q1', items:[
-    {id:'m2', time:'Month 2', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m2', time:'Month 2', owners:['dj'], flexible:true, month:2, task:'Monthly touchpoint — pick a play',
       internal:'Pull from Engagement Plays: swag, a feature update, or a quick call.',
       customer:'Varies by customer, see Engagement Plays.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
-  {phase:'Month 3 — Q1 win', quarter:'q1', items:[
-    {id:'q1win', time:'Month 3', owners:['dj','eg'], win:true, task:'Quarterly review + Q1 win',
+  {phase:'Month 3 — Quarterly review', quarter:'q1', items:[
+    {id:'q1win', time:'Month 3', owners:['dj','eg'], month:3, task:'Quarterly review',
       internal:'DJ emails the quarterly baseline report, collects feedback, surfaces one publicly-shareable win. EG starts scoping Phase 2.',
       customer:'"You\'re dispatching smarter."',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 4', quarter:'q2', items:[
-    {id:'m4', time:'Month 4', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m4', time:'Month 4', owners:['dj'], flexible:true, month:4, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: seasonal swag, a certificate, or a feature announcement.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 5', quarter:'q2', items:[
-    {id:'m5', time:'Month 5', owners:['dj','eg'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m5', time:'Month 5', owners:['dj','eg'], flexible:true, month:5, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: event/thought-leadership invite (bring in Brendan), or an in-person check-in.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
-  {phase:'Month 6 — Q2 win + Survey #2', quarter:'q2', items:[
-    {id:'q2win', time:'Month 6', owners:['eg','dj'], win:true, task:'Quarterly review + Q2 win',
+  {phase:'Month 6 — Quarterly review + Survey #2', quarter:'q2', items:[
+    {id:'q2win', time:'Month 6', owners:['eg','dj'], month:6, task:'Quarterly review',
       internal:"EG delivers the Phase 2 expansion proposal off Q1's proof points.",
       customer:'"A track record you can point to."',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})},
@@ -570,31 +571,31 @@ const CADENCE = [
       scoring:S({label:'Sent on time (+3)',points:3},{label:'Sent late (+1)',points:1})}
   ]},
   {phase:'Month 7', quarter:'q3', items:[
-    {id:'m7', time:'Month 7', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m7', time:'Month 7', owners:['dj'], flexible:true, month:7, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: HVAC Tech Day invite, or a case-study conversation.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 8', quarter:'q3', items:[
-    {id:'m8', time:'Month 8', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m8', time:'Month 8', owners:['dj'], flexible:true, month:8, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: swag drop, or a referral ask if the last survey came back a promoter score.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
-  {phase:'Month 9 — Q3 win (proposed)', quarter:'q3', items:[
-    {id:'q3win', time:'Month 9', owners:['dj','eg'], win:true, proposed:true, task:'Quarterly review + Q3 win',
+  {phase:'Month 9 — Quarterly review (proposed)', quarter:'q3', items:[
+    {id:'q3win', time:'Month 9', owners:['dj','eg'], proposed:true, month:9, task:'Quarterly review',
       internal:'DJ runs a mid/late-year customer review, turns wins into a case study draft. EG opens the renewal conversation informally.',
       customer:'"Here\'s what we found this year, and here\'s what\'s next."',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 10', quarter:'q4', items:[
-    {id:'m10', time:'Month 10', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m10', time:'Month 10', owners:['dj'], flexible:true, month:10, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: annual recap drafting starts, or a milestone certificate/swag.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 11', quarter:'q4', items:[
-    {id:'m11-touchpoint', time:'Month 11', owners:['dj'], flexible:true, task:'Monthly touchpoint — pick a play',
+    {id:'m11-touchpoint', time:'Month 11', owners:['dj'], flexible:true, month:11, task:'Monthly touchpoint — pick a play',
       internal:'Suggested: keep the relationship warm while the renewal proposal is in motion.',
       customer:'Varies by customer.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})},
@@ -604,7 +605,7 @@ const CADENCE = [
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0}), unspecified:true}
   ]},
   {phase:'Month 12 — recap', quarter:'q4', items:[
-    {id:'q4win', time:'Month 12', owners:['eg','dj'], win:true, proposed:true, task:'Month 12 recap',
+    {id:'q4win', time:'Month 12', owners:['eg','dj'], proposed:true, month:12, task:'Month 12 recap',
       internal:'DJ builds the annual recap: issues caught, callbacks avoided, ROI in plain numbers. EG + DJ set year-two scope together.',
       customer:'"Your year one, and what year two looks like."',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
@@ -612,16 +613,15 @@ const CADENCE = [
 ];
 
 const MILESTONES = [
-  {id:'ms-units10', trigger:'10+ units live', action:'Send installer certificate + shoutout', owners:['dj'], play:'Certificates & Badges', points:15, cap:'No cap, log each threshold crossed'},
-  {id:'ms-expansion', trigger:'Expansion order placed', action:'Refresh the partnering conversation, resend the Fuel Kit', owners:['dj','eg'], play:'Swag', points:20, cap:'No cap, can happen any quarter, log each order when it lands'},
+  {id:'ms-expansion', trigger:'Expansion order placed', action:'Refresh the partnering conversation, resend the Fuel Kit', owners:['dj','eg'], play:'Swag', points:20, cap:'No cap, log each order when it lands'},
   {id:'ms-winlogged', trigger:'Before/after win logged', action:'Flag as a case-study candidate', owners:['dj'], play:'Case Study / Public Win', points:15, cap:'No cap'},
   {id:'ms-promoter', trigger:'Survey score is a promoter', action:'Ask for a referral or reference', owners:['eg'], play:'Referral / Reference Ask', points:15, cap:'Once per survey received'},
-  {id:'ms-renewal', trigger:'Renewal signed', action:'Send thank-you swag, kick off Year 2 planning', owners:['eg','dj'], play:'Swag', points:25, cap:"Once per year, but it can land in any quarter, not just Q4, log it whenever it's actually signed"},
-  {id:'ms-feature', trigger:'Relevant new feature ships', action:'Send a proactive feature announcement', owners:['dj'], play:'New Feature Announcement', points:5, cap:'No cap'},
-  {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:10, cap:'No cap'},
   {id:'ms-techvolume', trigger:'A tech hits an install/repair volume threshold', action:'Individual certificate or swag', owners:['dj'], play:'Certificates & Badges', points:10, cap:'No cap, log per tech'},
-  {id:'ms-invite-user', trigger:'Customer invites a new user', action:'Adoption signal, no action needed beyond noting it', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap, log each new user invited'},
-  {id:'ms-notif-update', trigger:'Customer updates notification/alert preferences', action:'Adoption signal, they\'re engaging with the platform', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'}
+  {id:'ms-feedback', trigger:'Positive feedback from customer', action:'Log it, consider it for a testimonial or case study', owners:['dj'], play:'Case Study / Public Win', points:10, cap:'No cap'},
+  {id:'ms-feature', trigger:'Relevant new feature ships', action:'Send a proactive feature announcement', owners:['dj'], play:'New Feature Announcement', points:5, cap:'No cap'},
+  {id:'ms-feature-use', trigger:'Customer uses a new feature', action:'Adoption signal, note which feature', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'},
+  {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:5, cap:'No cap'},
+  {id:'ms-other', trigger:'Other', action:'Use the details field to say what it was', owners:['dj'], play:'', points:5, cap:'No cap'}
 ];
 
 const PLAYS = [
@@ -662,10 +662,10 @@ function genContractId(){
   return 'c-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 }
 function emptyContract(){
-  return {id:genContractId(), quantity:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:''};
+  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:''};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -686,8 +686,21 @@ function renderCadence(){
     group.items.forEach(function(item){
       const selIdx = state.deliveries[item.id] || 0;
       const isAuto = AUTOSCORE_ITEM_IDS.indexOf(item.id) !== -1;
+      const isLogDerived = item.month !== undefined && (item.flexible || item.win);
       let scoreControl;
-      if(item.scoring){
+      if(isLogDerived){
+        const donePoints = Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
+        const log = state.bonusLog[group.quarter] || [];
+        const loggedDone = item.win ? (log.length > 0) : log.some(function(e){ return e.month === item.month; });
+        const oldManualDone = (item.scoring[selIdx] && item.scoring[selIdx].points > 0);
+        if(loggedDone){
+          scoreControl = '<span class="autoscore-badge" style="color:var(--t-strong);border-color:var(--t-strong);">✓ logged (+'+donePoints+')</span>';
+        } else if(oldManualDone){
+          scoreControl = '<span class="autoscore-badge" style="color:var(--t-strong);border-color:var(--t-strong);">✓ carried over from before (+'+donePoints+')</span>';
+        } else {
+          scoreControl = '<span class="autoscore-badge">nothing logged yet (0)</span>';
+        }
+      } else if(item.scoring){
         scoreControl = '<select class="status-select" data-id="'+item.id+'" '+(isViewerMode()?'disabled':'')+'>'+
           item.scoring.map(function(opt, i){ return '<option value="'+i+'" '+(i===selIdx?'selected':'')+'>'+opt.label+'</option>'; }).join('')+
           '</select>';
@@ -708,6 +721,7 @@ function renderCadence(){
               (isAuto?'<span class="autoscore-badge">'+(selIdx>0?'auto-scored':'auto')+'</span>':'')+
             '</div>'+
             (item.unspecified?'<div class="unspecified-note">Points not specified, defaulted to match other one-time deliverables, confirm.</div>':'')+
+            (isLogDerived?'<div class="cap-note">Driven by the Wins & Bonus Log — log it there'+(item.win?' (any entry this quarter counts)':' with month '+item.month+' selected')+' and this updates on its own.</div>':'')+
             '<div class="field-label">Internal — what needs to happen</div>'+
             '<div class="field-text">'+item.internal+'</div>'+
             '<div class="field-label">Customer sees</div>'+
@@ -721,72 +735,107 @@ function renderCadence(){
 
 function renderMilestones(){
   const el = document.getElementById('panel-milestones');
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Expansion and renewal aren\'t tied to a fixed month, they land whenever the customer is ready. Log them in whichever quarter they actually happen.</div>';
-  html += '<div class="checkpoint-bar" style="margin-bottom:14px;"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Logging to</label> <select id="bonus-quarter-select">'+
-    Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
-    '</select></div>';
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Log wins and milestone signals as they actually happen. Pick the month and what kind it was — a customer can rack up more than one in the same month, just add another entry. It\'s bucketed into the right quarter automatically.</div>';
+
   if(currentCustomer){
     const qInfo = currentQuarterInfo(state.info.contracts);
     if(qInfo){
-      html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
-        (qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re logging to '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+      html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+'</div>';
     }
   }
-  MILESTONES.forEach(function(item){
-    html += ''+
-      '<div class="bonus-row">'+
-        '<div class="bonus-info">'+
-          '<div class="row-top"><span class="row-title">'+item.trigger+'</span>'+ownerPills(item.owners)+'<span class="pts-note">+'+item.points+' pts</span></div>'+
-          '<div class="field-text">'+item.action+' <span style="color:var(--ink-soft)">— '+item.play+'</span></div>'+
-          '<div class="cap-note">'+item.cap+'</div>'+
-        '</div>'+
-        '<div class="bonus-add"><button data-log-id="'+item.id+'" '+(isViewerMode()?'disabled':'')+'>+ Log for '+QUARTER_LABEL[selectedQuarter]+'</button></div>'+
-      '</div>';
-  });
 
-  html += '<div class="log-list"><div class="field-label">Bonus log — '+QUARTER_LABEL[selectedQuarter]+'</div>';
-  if(selectedQuarter === 'q1' && state.info.survey1SupportScore){
-    const score = state.info.survey1SupportScore;
-    const pts = surveyBonusPoints(score);
-    html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
-      (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
-      '<span class="cap-note">auto, change the score above to update</span></div>';
-  }
-  const log = state.bonusLog[selectedQuarter] || [];
-  const hasAutoSurveyEntry = (selectedQuarter === 'q1' && !!state.info.survey1SupportScore);
-  if(log.length===0 && !hasAutoSurveyEntry){
-    html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet this quarter.</div>';
-  } else {
-    log.forEach(function(entry, idx){
+  const typeOptions = MILESTONES.map(function(m){ return '<option value="'+m.id+'">'+m.trigger+(m.id!=='ms-other'?' — +'+m.points+' pts':'')+'</option>'; }).join('');
+
+  const firstSigned = contractSummary(state.info.contracts).firstSigned;
+
+  html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
+    '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
+      '<div class="info-field" style="max-width:150px;"><label>Date it happened</label><input type="date" id="win-date-input" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:240px;flex:1;"><label>What happened</label><select id="win-type-select" '+(isViewerMode()?'disabled':'')+'>'+
+        '<option value="">— select a type —</option>'+
+        typeOptions+
+      '</select></div>'+
+      '<div class="info-field" style="max-width:90px;display:none;" id="win-points-wrap"><label>Points</label><input type="number" min="0" max="50" id="win-points-input" value="5" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:220px;flex:1;"><label>Details'+ '<span id="win-notes-required-mark"></span>'+'</label><input type="text" id="win-notes-input" placeholder="e.g. who, what site, specifics" '+(isViewerMode()?'disabled':'')+'></div>'+
+    '</div>'+
+    '<div class="bonus-add"><button id="win-add-btn" '+(isViewerMode()?'disabled':'')+'>+ Add entry</button></div>'+
+  '</div>'+
+  (firstSigned ? '' : '<div class="cap-note" style="margin-top:6px;">Set a "Sign date" on a contract above first — that\'s the anchor date entries use to figure out which month/quarter a given date falls into.</div>');
+
+  html += '<div class="log-list">';
+  Object.keys(QUARTER_LABEL).forEach(function(q){
+    html += '<div class="field-label" style="margin-top:14px;display:flex;align-items:center;gap:8px;"><span class="quarter-badge" style="background:'+QUARTER_COLOR[q]+';">'+QUARTER_LABEL[q]+'</span> log</div>';
+    let anyRows = false;
+    if(q === 'q1' && state.info.survey1SupportScore){
+      anyRows = true;
+      const score = state.info.survey1SupportScore;
+      const pts = surveyBonusPoints(score);
+      html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
+        (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
+        '<span class="cap-note">auto, change the score above to update</span></div>';
+    }
+    const entries = (state.bonusLog[q] || []).map(function(entry, idx){ return {entry:entry, idx:idx}; })
+      .sort(function(a,b){ return (a.entry.date||'').localeCompare(b.entry.date||'') || (a.entry.month||0)-(b.entry.month||0); });
+    if(entries.length) anyRows = true;
+    entries.forEach(function(pair){
+      const entry = pair.entry;
       const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-      html += '<div class="log-item"><span>'+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b></span><button data-remove-log="'+idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
+      const whenLabel = entry.date ? entry.date : (entry.month ? 'Month '+entry.month : '');
+      html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b>'+
+        (entry.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(entry.notes)+'</span>' : '')+
+        '</span><button data-remove-log="'+q+':'+pair.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
     });
-  }
+    if(!anyRows){
+      html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet.</div>';
+    }
+  });
   html += '</div>';
 
   el.innerHTML = html;
 
-  document.getElementById('bonus-quarter-select').addEventListener('change', function(e){
-    selectedQuarter = e.target.value;
-    renderMilestones();
+  const typeSelect = document.getElementById('win-type-select');
+  const pointsWrap = document.getElementById('win-points-wrap');
+  const requiredMark = document.getElementById('win-notes-required-mark');
+  typeSelect.addEventListener('change', function(){
+    const isOther = typeSelect.value === 'ms-other';
+    pointsWrap.style.display = isOther ? '' : 'none';
+    requiredMark.textContent = isOther ? ' (required for Other)' : '';
   });
-  el.querySelectorAll('[data-log-id]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
-      const msId = btn.dataset.logId;
-      const ms = MILESTONES.find(function(m){ return m.id===msId; });
-      state.bonusLog[selectedQuarter].push({msId:msId, points:ms.points, ts:Date.now()});
-      scheduleSave();
-      renderMilestones();
-      updateProgress();
-    });
+
+  const addBtn = document.getElementById('win-add-btn');
+  if(addBtn) addBtn.addEventListener('click', function(){
+    if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+    const dateInput = document.getElementById('win-date-input');
+    const notesInput = document.getElementById('win-notes-input');
+    const pointsInput = document.getElementById('win-points-input');
+    const dateVal = dateInput.value;
+    const msId = typeSelect.value;
+    if(!dateVal){ flashSaveStatus('pick the date this happened'); return; }
+    if(!msId){ flashSaveStatus('pick what kind of win or signal this was'); return; }
+    if(msId === 'ms-other' && !notesInput.value.trim()){ flashSaveStatus('add a detail so "Other" means something later'); return; }
+    const cs = contractSummary(state.info.contracts);
+    const month = monthNumberForDate(dateVal, cs.firstSigned);
+    if(month === null){ flashSaveStatus('set a contract sign date first'); return; }
+    const ms = MILESTONES.find(function(m){ return m.id===msId; });
+    const points = msId === 'ms-other' ? (parseInt(pointsInput.value, 10) || 0) : ms.points;
+    const q = quarterForMonth(month);
+    state.bonusLog[q].push({msId:msId, points:points, month:month, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
+    scheduleSave();
+    dateInput.value = '';
+    typeSelect.value = '';
+    notesInput.value = '';
+    renderMilestones();
+    renderCadence();
+    updateProgress();
   });
   el.querySelectorAll('[data-remove-log]').forEach(function(btn){
     btn.addEventListener('click', function(){
-      const idx = parseInt(btn.dataset.removeLog, 10);
-      state.bonusLog[selectedQuarter].splice(idx, 1);
+      const parts = btn.dataset.removeLog.split(':');
+      const q = parts[0], idx = parseInt(parts[1], 10);
+      state.bonusLog[q].splice(idx, 1);
       scheduleSave();
       renderMilestones();
+      renderCadence();
       updateProgress();
     });
   });
@@ -840,12 +889,33 @@ function runAutoscore(){
   return changed;
 }
 
+// Monthly touchpoints and quarterly wins are log-derived, not manually
+// checked — if it's worth a checkmark, it's because something was actually
+// logged in the Wins & Bonus Log for that month/quarter. One place to enter
+// it, so nothing gets marked twice (once as a checkbox, once as a log entry).
+function derivedTouchpointPoints(item, q){
+  const donePoints = Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
+  const log = state.bonusLog[q] || [];
+  const loggedDone = item.win ? (log.length > 0) : log.some(function(e){ return e.month === item.month; });
+  // Grandfather in whatever was already marked Done the old manual way before
+  // this item switched to log-derived scoring — otherwise every customer's
+  // pre-existing Q2-Q4 completions would evaporate to 0 the moment this
+  // deploys, just because nothing's been backfilled into the new log yet.
+  const oldIdx = state.deliveries[item.id] || 0;
+  const oldManualDone = item.scoring[oldIdx] && item.scoring[oldIdx].points > 0;
+  return (loggedDone || oldManualDone) ? donePoints : 0;
+}
+
 function deliveryPointsForQuarter(q){
   let earned = 0;
   CADENCE.forEach(function(group){
     if(group.quarter !== q) return;
     group.items.forEach(function(item){
       if(!item.scoring) return;
+      if(item.month !== undefined && (item.flexible || item.win)){
+        earned += derivedTouchpointPoints(item, q);
+        return;
+      }
       const idx = state.deliveries[item.id] || 0;
       earned += (item.scoring[idx] ? item.scoring[idx].points : 0);
     });
@@ -859,9 +929,48 @@ function bonusPointsForQuarter(q){
   return total;
 }
 
+// Bonus points are uncapped for logging (log every real win, no reason to
+// hold back). For SCORING, they split into two tiers:
+//   - "Major" wins (15+ points — expansion order, before/after win, promoter
+//     status) are real relationship-moving events. They count in FULL,
+//     uncapped, as pure upside — they're SUPPOSED to swing a quarter hard,
+//     even past 100%. An expansion order should visibly move someone up.
+//   - "Minor" signals (under 15 points — a touchpoint, a feature ship, a
+//     feedback note) stay capped at 50% of that quarter's delivery max.
+//     These are routine and shouldn't alone inflate a thin quarter to
+//     Champion the way uncapped bonus used to.
+const MAJOR_BONUS_THRESHOLD = 15;
+const BONUS_CAP_RATIO = 0.5;
+
+function splitBonusForQuarter(q){
+  const log = state.bonusLog[q] || [];
+  let major = 0, minor = 0;
+  log.forEach(function(e){
+    if(e.points >= MAJOR_BONUS_THRESHOLD) major += e.points;
+    else minor += e.points;
+  });
+  if(q === 'q1') minor += surveyBonusPoints(state.info.survey1SupportScore);
+  return {major:major, minor:minor};
+}
+function bonusCapForQuarter(q){
+  return Math.round(maxDeliveryForQuarter(q) * BONUS_CAP_RATIO);
+}
+function scoredBonusForQuarter(q){
+  const split = splitBonusForQuarter(q);
+  return split.major + Math.min(split.minor, bonusCapForQuarter(q));
+}
+function effectiveMaxForQuarter(q){
+  return maxDeliveryForQuarter(q) + bonusCapForQuarter(q);
+}
+
 function contractSummary(contracts){
   contracts = contracts || [];
-  const totalSidekicks = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantity, 10) || 0); }, 0);
+  const totalPro = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantityPro, 10) || 0); }, 0);
+  const totalMax = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantityMax, 10) || 0); }, 0);
+  // Legacy contracts saved before the Pro/Max split just have a flat `quantity` —
+  // count those toward the total too so old data doesn't silently disappear.
+  const totalLegacy = contracts.reduce(function(sum, c){ return sum + (c.quantityPro===undefined && c.quantityMax===undefined ? (parseInt(c.quantity, 10) || 0) : 0); }, 0);
+  const totalSidekicks = totalPro + totalMax + totalLegacy;
   const firstSigned = contracts.map(function(c){ return c.signDate; }).filter(Boolean).sort()[0] || '';
 
   // A contract explicitly flagged as "renews" another one supersedes it —
@@ -884,7 +993,7 @@ function contractSummary(contracts){
   // (so a fully overdue customer still shows something, still flagged red).
   const upcoming = liveExpirations.filter(function(d){ return d >= todayStr; });
   const nextRenewal = upcoming.length ? upcoming[0] : (liveExpirations[liveExpirations.length-1] || '');
-  return {totalSidekicks:totalSidekicks, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
+  return {totalSidekicks:totalSidekicks, totalPro:totalPro+totalLegacy, totalMax:totalMax, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
 }
 
 function surveyBonusPoints(score){
@@ -894,20 +1003,50 @@ function surveyBonusPoints(score){
   return 0;
 }
 
+function quarterForMonth(month){
+  const m = parseInt(month, 10);
+  if(!m || m < 1) return 'q1';
+  const zeroIndexed = ((m - 1) % 12); // wraps year 2, 3, etc. back onto q1-q4
+  const qIdx = Math.floor(zeroIndexed / 3);
+  return ['q1','q2','q3','q4'][qIdx];
+}
+
+function monthsBetween(startStr, endStr){
+  if(!startStr) return null;
+  const d1 = new Date(startStr);
+  if(isNaN(d1)) return null;
+  const d2 = endStr ? new Date(endStr) : new Date();
+  if(isNaN(d2)) return null;
+  let months = (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth());
+  if(d2.getDate() < d1.getDate()) months -= 1;
+  return Math.max(0, months);
+}
 function monthsSince(dateStr){
+  return monthsBetween(dateStr, null);
+}
+// Turns an actual calendar date into "month N of the relationship" (1-indexed),
+// anchored to the customer's first signed date — so logging a win just means
+// picking the date it happened, not doing month math by hand.
+function monthNumberForDate(dateStr, firstSigned){
+  const months = monthsBetween(firstSigned, dateStr);
+  if(months === null) return null;
+  return months + 1;
+}
+
+function daysSince(dateStr){
   if(!dateStr) return null;
   const d = new Date(dateStr);
   if(isNaN(d)) return null;
   const now = new Date();
-  let months = (now.getFullYear()-d.getFullYear())*12 + (now.getMonth()-d.getMonth());
-  if(now.getDate() < d.getDate()) months -= 1;
-  return Math.max(0, months);
+  return Math.floor((now - d) / (1000*60*60*24));
 }
 
 function currentQuarterInfo(contracts){
   const cs = contractSummary(contracts);
+  const days = daysSince(cs.firstSigned);
+  if(days === null) return null;
+  if(days <= 30) return {special:'first30'};
   const months = monthsSince(cs.firstSigned);
-  if(months === null) return null;
   const year = Math.floor(months/12) + 1;
   const qIdx = Math.floor((months % 12) / 3); // 0..3
   const q = ['q1','q2','q3','q4'][qIdx];
@@ -916,6 +1055,7 @@ function currentQuarterInfo(contracts){
 
 function quarterBadgeHtml(info){
   if(!info) return '—';
+  if(info.special === 'first30') return '<span class="quarter-badge" style="background:#334155;">First 30 Days</span>';
   const yearPrefix = info.year > 1 ? 'Y'+info.year+' ' : '';
   return '<span class="quarter-badge" style="background:'+QUARTER_COLOR[info.q]+';">'+yearPrefix+QUARTER_LABEL[info.q]+'</span>';
 }
@@ -936,9 +1076,13 @@ function renderScorecard(){
   }
   const del = deliveryPointsForQuarter(selectedQuarter);
   const bonus = bonusPointsForQuarter(selectedQuarter);
-  const total = del + bonus;
+  const bonusSplit = splitBonusForQuarter(selectedQuarter);
+  const scoredBonus = scoredBonusForQuarter(selectedQuarter);
+  const bonusCap = bonusCapForQuarter(selectedQuarter);
+  const total = del + scoredBonus;
   const maxDel = maxDeliveryForQuarter(selectedQuarter);
-  const pct = maxDel > 0 ? Math.round((total/maxDel)*100) : 0;
+  const effMax = effectiveMaxForQuarter(selectedQuarter);
+  const pct = effMax > 0 ? Math.round((total/effMax)*100) : 0;
   const tier = tierFor(pct);
 
   let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="score-quarter-select">'+
@@ -948,12 +1092,12 @@ function renderScorecard(){
   const qInfo = currentQuarterInfo(state.info.contracts);
   if(qInfo){
     html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
-      (qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+      (!qInfo.special && qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
   }
 
   const cs = contractSummary(state.info.contracts);
   const infoBits = [];
-  if(cs.totalSidekicks) infoBits.push(cs.totalSidekicks+' Sidekicks across '+cs.count+' contract'+(cs.count===1?'':'s'));
+  if(cs.totalSidekicks) infoBits.push(cs.totalSidekicks+' Sidekicks ('+cs.totalPro+' Pro / '+cs.totalMax+' Max) across '+cs.count+' contract'+(cs.count===1?'':'s'));
   if(cs.firstSigned) infoBits.push('Signed '+cs.firstSigned);
   if(cs.nextRenewal) infoBits.push('Next renewal '+cs.nextRenewal);
   const typeKey = state.info.customerType;
@@ -964,7 +1108,10 @@ function renderScorecard(){
     (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
     '<div class="score-grid">'+
       '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
-      '<div class="score-block"><div class="lbl">Bonus points</div><div class="val">+'+bonus+'</div></div>'+
+      '<div class="score-block"><div class="lbl">Bonus points</div><div class="val">+'+bonus+'</div>'+
+        (bonusSplit.major>0 ? '<div class="cap-note" style="margin-top:2px;">+'+bonusSplit.major+' from major wins — counts in full</div>' : '')+
+        '<div class="cap-note">+'+bonusSplit.minor+' from minor signals — counts up to '+bonusCap+' toward score</div>'+
+      '</div>'+
       '<div class="score-block"><div class="lbl">% of quarter max</div><div class="val">'+pct+'%</div></div>'+
       '<div class="score-block"><div class="lbl">Tier</div><span class="tier-badge" style="background:'+tier.color+'">'+tier.label+'</span></div>'+
     '</div>'+
@@ -976,15 +1123,17 @@ function renderScorecard(){
   });
   html += '</tbody></table>';
 
-  html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
+  html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
   Object.keys(QUARTER_LABEL).forEach(function(q){
     const d = deliveryPointsForQuarter(q);
     const b = bonusPointsForQuarter(q);
+    const sb = scoredBonusForQuarter(q);
     const m = maxDeliveryForQuarter(q);
-    const t = d + b;
-    const p = m > 0 ? Math.round((t/m)*100) : 0;
+    const em = effectiveMaxForQuarter(q);
+    const t = d + sb;
+    const p = em > 0 ? Math.round((t/em)*100) : 0;
     const tq = tierFor(p);
-    html += '<tr><td>'+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+b+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
+    html += '<tr><td>'+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+sb+(b>sb?' <span style="color:var(--ink-soft);">(of +'+b+' logged)</span>':'')+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
   });
   html += '</tbody></table>';
 
@@ -998,13 +1147,26 @@ function renderScorecard(){
 let leaderboardQuarter = 'q1';
 
 const WIN_ITEM_BY_QUARTER = {q1:'q1win', q2:'q2win', q3:'q3win', q4:'q4win'};
-function lastWinQuarter(deliveries){
-  const order = ['q4','q3','q2','q1'];
-  for(const q of order){
-    const itemId = WIN_ITEM_BY_QUARTER[q];
-    if(deliveries[itemId] === 1) return QUARTER_LABEL[q];
-  }
-  return '—';
+function escAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+function lastWinInfo(bonusLog){
+  let best = null;
+  Object.keys(bonusLog||{}).forEach(function(q){
+    (bonusLog[q]||[]).forEach(function(entry){
+      if(!entry.date) return;
+      if(!best || entry.date > best.date) best = entry;
+    });
+  });
+  return best;
+}
+
+function lastWinCell(entry){
+  if(!entry) return '—';
+  const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
+  const label = (ms?ms.trigger:entry.msId)+(entry.notes?': '+entry.notes:'');
+  return '<span title="'+escAttr(label)+'">'+entry.date+'</span>';
 }
 
 async function renderLeaderboard(){
@@ -1024,16 +1186,18 @@ async function renderLeaderboard(){
     state = s;
     const d = deliveryPointsForQuarter(leaderboardQuarter);
     const b = bonusPointsForQuarter(leaderboardQuarter);
-    const lastWin = lastWinQuarter(s.deliveries || {});
+    const sb = scoredBonusForQuarter(leaderboardQuarter);
+    const lastWin = lastWinInfo(s.bonusLog || {});
     state = savedState;
     const m = maxDeliveryForQuarter(leaderboardQuarter);
-    const total = d + b;
-    const pct = m > 0 ? Math.round((total/m)*100) : 0;
+    const em = effectiveMaxForQuarter(leaderboardQuarter);
+    const total = d + sb;
+    const pct = em > 0 ? Math.round((total/em)*100) : 0;
     const tier = tierFor(pct);
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const currentQInfo = currentQuarterInfo(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo};
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo};
   }));
 
   rows.sort(function(a,b){ return b.pct - a.pct; });
@@ -1043,8 +1207,8 @@ async function renderLeaderboard(){
     '</select></div>';
 
   html += '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
-    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Current Q</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Survey #1 score</th><th>Next renewal</th><th>Last win Q</th>'+
-    '<th>Delivery / Max</th><th>Bonus</th><th>Total</th><th>% of max</th>'+
+    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Current Q</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Survey #1 score</th><th>Next renewal</th><th>Last win</th>'+
+    '<th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th>'+
     '</tr></thead><tbody>';
   rows.forEach(function(r, i){
     const typeKey = r.info.customerType;
@@ -1054,7 +1218,7 @@ async function renderLeaderboard(){
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
-      '<td class="num">'+(r.cs.totalSidekicks||'—')+'</td>'+
+      '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
@@ -1065,8 +1229,8 @@ async function renderLeaderboard(){
       '<td class="num">'+(r.info.survey1SentDate||'—')+'</td>'+
       '<td class="num">'+(r.info.survey1SupportScore||'—')+'</td>'+
       '<td class="num'+(renewalOverdue?' overdue':'')+'">'+(r.cs.nextRenewal||'—')+'</td>'+
-      '<td class="num">'+r.lastWin+'</td>'+
-      '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.bonus+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
+      '<td class="num">'+(lastWinCell(r.lastWin))+'</td>'+
+      '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.scoredBonus+(r.bonus>r.scoredBonus?' <span style="color:var(--ink-soft);font-size:10.5px;">(of +'+r.bonus+')</span>':'')+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
   });
   html += '</tbody></table></div>';
 
@@ -1090,7 +1254,14 @@ function updateProgress(){
     line.innerHTML = currentCustomer ? 'Working on <b>'+currentCustomer+'</b>' : 'Pick a customer to start scoring';
   } else if(active==='cadence'){
     const totalItems = CADENCE.reduce(function(n,g){return n+g.items.filter(function(i){return i.scoring;}).length;},0);
-    const scored = Object.keys(state.deliveries).filter(function(k){ return state.deliveries[k]; }).length;
+    let scored = Object.keys(state.deliveries).filter(function(k){ return state.deliveries[k]; }).length;
+    CADENCE.forEach(function(group){
+      group.items.forEach(function(item){
+        if(item.scoring && item.month !== undefined && (item.flexible || item.win)){
+          if(derivedTouchpointPoints(item, group.quarter) > 0) scored += 1;
+        }
+      });
+    });
     line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+currentCustomer+'</b>':'');
   } else if(active==='leaderboard'){
     line.innerHTML = 'Every saved customer, ranked by % of quarter max';
@@ -1120,10 +1291,14 @@ function renderContracts(){
   const disabledAttr = (!currentCustomer || isViewerMode()) ? 'disabled' : '';
   let html = '';
   contracts.forEach(function(c, i){
+    const isLegacyQty = (c.quantityPro === undefined && c.quantityMax === undefined && c.quantity !== undefined && c.quantity !== '');
+    const proVal = isLegacyQty ? c.quantity : (c.quantityPro || '');
+    const maxVal = c.quantityMax || '';
     html += ''+
       '<div class="contract-block">'+
       '<div class="contract-row">'+
-        '<div class="info-field"><label>Contract '+(i+1)+' · qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantity" value="'+(c.quantity||'')+'" placeholder="0" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Contract '+(i+1)+' · Pro qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantityPro" value="'+proVal+'" placeholder="0" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Max qty</label><input type="number" min="0" data-contract-index="'+i+'" data-field="quantityMax" value="'+maxVal+'" placeholder="0" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Sign date</label><input type="date" data-contract-index="'+i+'" data-field="signDate" value="'+(c.signDate||'')+'" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Shipped date</label><input type="date" data-contract-index="'+i+'" data-field="shippedDate" value="'+(c.shippedDate||'')+'" '+disabledAttr+'></div>'+
         '<div class="info-field"><label>Install date</label><input type="date" data-contract-index="'+i+'" data-field="installDate" value="'+(c.installDate||'')+'" '+disabledAttr+'></div>'+
@@ -1135,6 +1310,7 @@ function renderContracts(){
         '</select></div>'+
         (contracts.length>1 ? '<button class="remove-contract" data-remove-contract="'+i+'" '+disabledAttr+'>Remove</button>' : '<span></span>')+
       '</div>'+
+      (isLegacyQty ? '<div class="cap-note">This contract was saved before the Pro/Max split — its quantity defaulted into "Pro qty," confirm or move it to "Max qty" if that\'s wrong.</div>' : '')+
       (c.type==='renewal' ? (
         '<div class="renewal-line"><label>Renews</label><select data-contract-index="'+i+'" data-field="renewsContractId" '+disabledAttr+'>'+
           '<option value="">— select which contract this renews —</option>'+
@@ -1200,6 +1376,7 @@ async function loadCustomerState(name){
       if(c.type === undefined) c.type = '';
       if(c.renewsContractId === undefined) c.renewsContractId = '';
     });
+    if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
     if(migrated){
       window.storage.set(customerStorageKey(name), JSON.stringify(merged)).catch(function(){});
     }
@@ -1225,7 +1402,8 @@ async function flushSave(){
 }
 async function populateSelect(list){
   const sel = document.getElementById('customer-select');
-  sel.innerHTML = '<option value="">Select a customer…</option>' + list.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join('');
+  const sorted = list.slice().sort(function(a,b){ return a.localeCompare(b, undefined, {sensitivity:'base'}); });
+  sel.innerHTML = '<option value="">Select a customer…</option>' + sorted.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join('');
 }
 
 document.getElementById('add-customer').addEventListener('click', async function(){
@@ -1291,7 +1469,7 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   const idx = parseInt(e.target.dataset.contractIndex, 10);
   const field = e.target.dataset.field;
   state.info.contracts[idx][field] = e.target.value;
-  if(field==='quantity'){ scheduleSave(); return; }
+  if(field==='quantityPro' || field==='quantityMax'){ scheduleSave(); return; }
   if(field==='type' || field==='renewsContractId'){
     if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
     renderContracts();
@@ -1334,6 +1512,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     tab.classList.add('active');
     document.getElementById('panel-'+tab.dataset.panel).classList.add('active');
     await flushSave();
+    if(tab.dataset.panel==='cadence') renderCadence();
     if(tab.dataset.panel==='scorecard') renderScorecard();
     if(tab.dataset.panel==='milestones') renderMilestones();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
