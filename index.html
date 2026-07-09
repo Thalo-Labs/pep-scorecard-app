@@ -761,7 +761,7 @@ function renderMilestones(){
   if(currentCustomer){
     const qInfo = currentQuarterInfo(state.info.contracts);
     if(qInfo){
-      html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+'</div>';
+      html += '<div class="quarter-note">'+escAttr(currentCustomer)+' is currently in '+quarterBadgeHtml(qInfo)+'</div>';
     }
   }
 
@@ -1247,7 +1247,7 @@ function renderScorecard(){
 
   if(qInfo){
     const viewingMatchesCurrent = qInfo.special ? (selectedYear===1 && selectedQuarter==='q1') : (qInfo.year===selectedYear && qInfo.q===selectedQuarter);
-    html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
+    html += '<div class="quarter-note">'+escAttr(currentCustomer)+' is currently in '+quarterBadgeHtml(qInfo)+
       (!viewingMatchesCurrent?' <span class="quarter-mismatch">— you\'re viewing '+yearLabel+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
   }
 
@@ -1260,7 +1260,7 @@ function renderScorecard(){
   const typeBadge = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:10px;padding:3px 9px;margin-left:8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '';
 
   html += '<div class="score-hero">'+
-    '<div class="eyebrow">'+currentCustomer+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
+    '<div class="eyebrow">'+escAttr(currentCustomer)+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
     (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
     '<div class="score-grid">'+
       '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
@@ -1429,7 +1429,7 @@ async function renderLeaderboard(){
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
-    const customerLink = '<span data-goto-customer="'+escAttr(r.name)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);">'+r.name+'</span>';
+    const customerLink = '<span data-goto-customer="'+escAttr(r.name)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);">'+escAttr(r.name)+'</span>';
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
@@ -1472,7 +1472,7 @@ function updateProgress(){
   const active = document.querySelector('.tab.active').dataset.panel;
   const line = document.getElementById('progress-line');
   if(active==='scorecard' || active==='milestones'){
-    line.innerHTML = currentCustomer ? 'Working on <b>'+currentCustomer+'</b>' : 'Pick a customer to start scoring';
+    line.innerHTML = currentCustomer ? 'Working on <b>'+escAttr(currentCustomer)+'</b>' : 'Pick a customer to start scoring';
   } else if(active==='cadence'){
     const totalItems = CADENCE.reduce(function(n,g){return n+g.items.filter(function(i){return i.scoring;}).length;},0);
     let scored = Object.keys(state.deliveries).filter(function(k){ return state.deliveries[k]; }).length;
@@ -1483,7 +1483,7 @@ function updateProgress(){
         }
       });
     });
-    line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+currentCustomer+'</b>':'');
+    line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+escAttr(currentCustomer)+'</b>':'');
   } else if(active==='leaderboard'){
     line.innerHTML = 'Every customer, ranked by current standing';
   } else {
@@ -1636,7 +1636,7 @@ async function flushSave(){
 async function populateSelect(list){
   const sel = document.getElementById('customer-select');
   const sorted = list.slice().sort(function(a,b){ return a.localeCompare(b, undefined, {sensitivity:'base'}); });
-  sel.innerHTML = '<option value="">Select a customer…</option>' + sorted.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join('');
+  sel.innerHTML = '<option value="">Select a customer…</option>' + sorted.map(function(n){ return '<option value="'+escAttr(n)+'">'+escAttr(n)+'</option>'; }).join('');
 }
 
 document.getElementById('add-customer').addEventListener('click', async function(){
