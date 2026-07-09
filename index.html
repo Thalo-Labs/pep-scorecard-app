@@ -1101,6 +1101,21 @@ function dateParts(dateStr){
   return {y:parseInt(m[1],10), mo:parseInt(m[2],10), d:parseInt(m[3],10)};
 }
 
+function relativeTimeLabel(dateStr){
+  const p = dateParts(dateStr);
+  if(!p) return dateStr || '—';
+  const t = dateParts(nycTodayStr());
+  const days = Math.round((Date.UTC(t.y,t.mo-1,t.d) - Date.UTC(p.y,p.mo-1,p.d)) / 86400000);
+  if(days < 0) return dateStr;
+  if(days === 0) return 'Today';
+  if(days === 1) return 'Yesterday';
+  if(days <= 7) return 'Last week';
+  if(days <= 31) return 'Last month';
+  if(days <= 365) return Math.round(days/30)+' months ago';
+  const years = Math.round(days/365);
+  return years===1 ? 'Last year' : years+' years ago';
+}
+
 function monthsBetween(startStr, endStr){
   const p1 = dateParts(startStr);
   if(!p1) return null;
@@ -1167,6 +1182,12 @@ function hasActiveContract(contracts){
     if(c.expirationDate && c.expirationDate < todayStr) return false;
     return true;
   });
+}
+
+// Flags a contract that's signed but hasn't shipped yet -- Sidekicks are on
+// order but not out the door. Independent of tier/score, same as No contract.
+function hasAwaitingShipment(contracts){
+  return (contracts||[]).some(function(c){ return c.signDate && !c.shippedDate; });
 }
 
 function renderScorecard(){
@@ -1276,8 +1297,8 @@ function lastWinInfo(bonusLog){
 function lastWinCell(entry){
   if(!entry) return '—';
   const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-  const label = (ms?ms.trigger:entry.msId)+(entry.notes?': '+entry.notes:'');
-  return '<span title="'+escAttr(label)+'">'+entry.date+'</span>';
+  const label = entry.date+' — '+(ms?ms.trigger:entry.msId)+(entry.notes?': '+entry.notes:'');
+  return '<span title="'+escAttr(label)+'" style="cursor:help;">'+relativeTimeLabel(entry.date)+'</span>';
 }
 
 async function renderLeaderboard(){
@@ -1318,7 +1339,8 @@ async function renderLeaderboard(){
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const activeContract = hasActiveContract(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract};
+    const awaitingShipment = hasAwaitingShipment(s.info.contracts);
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment};
   }));
 
   rows.sort(function(a,b){ return b.pct - a.pct; });
@@ -1331,7 +1353,8 @@ async function renderLeaderboard(){
     const typeKey = r.info.customerType;
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
     const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>'+
-      (r.activeContract ? '' : ' <span class="tier-badge" style="background:#334155;font-size:9.5px;padding:3px 8px;">No contract</span>');
+      (r.activeContract ? '' : ' <span class="tier-badge" style="background:#334155;font-size:9.5px;padding:3px 8px;">No contract</span>')+
+      (r.awaitingShipment ? ' <span class="tier-badge" style="background:#2F6FED;font-size:9.5px;padding:3px 8px;">Awaiting shipment</span>' : '');
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
