@@ -778,6 +778,8 @@ function renderMilestones(){
   Object.keys(state.bonusLog).forEach(function(q){
     (state.bonusLog[q] || []).forEach(function(entry){ maxYear = Math.max(maxYear, entry.year || 1); });
   });
+  const surveyTarget = surveyBonusTarget();
+  if(surveyTarget) maxYear = Math.max(maxYear, surveyTarget.year);
 
   html += '<div class="log-list">';
   for(let year = 1; year <= maxYear; year++){
@@ -785,11 +787,11 @@ function renderMilestones(){
       const yearPrefix = year > 1 ? 'Y'+year+' ' : '';
       html += '<div class="field-label" style="margin-top:14px;display:flex;align-items:center;gap:8px;"><span class="quarter-badge" style="background:'+QUARTER_COLOR[q]+';">'+yearPrefix+QUARTER_LABEL[q]+'</span> log</div>';
       let anyRows = false;
-      if(q === 'q1' && year === 1 && state.info.survey1SupportScore){
+      if(surveyTarget && surveyTarget.year === year && surveyTarget.q === q && state.info.survey1SupportScore){
         anyRows = true;
         const score = state.info.survey1SupportScore;
         const pts = surveyBonusPoints(score);
-        html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
+        html += '<div class="log-item"><span>'+(state.info.survey1SentDate?state.info.survey1SentDate+' — ':'')+'Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
           (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
           '<span class="cap-note">auto, change the score above to update</span></div>';
       }
@@ -963,9 +965,10 @@ function deliveryPointsForQuarter(year, q){
 function bonusPointsForQuarter(year, q){
   const log = (state.bonusLog[q] || []).filter(function(e){ return (e.year||1) === year; });
   let total = log.reduce(function(sum, e){ return sum + e.points; }, 0);
-  // Survey #1 is a single one-time field, not logged per year — it only
-  // ever belongs to the customer's first Q1.
-  if(q === 'q1' && year === 1) total += surveyBonusPoints(state.info.survey1SupportScore);
+  // Survey #1 credits whichever year/quarter it was actually sent in, not
+  // always Year 1 Q1.
+  const surveyTarget = surveyBonusTarget();
+  if(surveyTarget && surveyTarget.year === year && surveyTarget.q === q) total += surveyBonusPoints(state.info.survey1SupportScore);
   return total;
 }
 
@@ -989,7 +992,8 @@ function splitBonusForQuarter(year, q){
     if(e.points >= MAJOR_BONUS_THRESHOLD) major += e.points;
     else minor += e.points;
   });
-  if(q === 'q1' && year === 1) minor += surveyBonusPoints(state.info.survey1SupportScore);
+  const surveyTarget = surveyBonusTarget();
+  if(surveyTarget && surveyTarget.year === year && surveyTarget.q === q) minor += surveyBonusPoints(state.info.survey1SupportScore);
   return {major:major, minor:minor};
 }
 function bonusCapForQuarter(year, q){
@@ -1041,6 +1045,18 @@ function surveyBonusPoints(score){
   if(n === 5) return 5;
   if(n === 4) return 4;
   return 0;
+}
+
+// Survey #1 isn't logged like a normal bonus entry (it's driven off a single
+// score field, not an entry in bonusLog), but it still happened on an actual
+// date and should credit whichever year/quarter that date falls in — not be
+// hardcoded to Year 1 Q1. A survey sent 10 months after signing belongs in
+// Q4, same as any other logged win at that point in the relationship.
+function surveyBonusTarget(){
+  const firstSigned = contractSummary(state.info.contracts).firstSigned;
+  const month = monthNumberForDate(state.info.survey1SentDate, firstSigned);
+  if(month === null) return null;
+  return {year: yearForMonth(month), q: quarterForMonth(month)};
 }
 
 function quarterForMonth(month){
