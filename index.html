@@ -225,20 +225,20 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   </div>
 
   <div class="tabs">
-    <div class="tab active" data-panel="cadence">Fixed cadence</div>
+    <div class="tab" data-panel="cadence">Fixed cadence</div>
     <div class="tab" data-panel="milestones">Bonus log</div>
     <div class="tab" data-panel="plays">Engagement plays</div>
     <div class="tab" data-panel="scorecard">Scorecard</div>
-    <div class="tab" data-panel="leaderboard">All customers</div>
+    <div class="tab active" data-panel="leaderboard">All customers</div>
   </div>
 
   <div class="progress" id="progress-line"></div>
 
-  <div class="panel active" id="panel-cadence"></div>
+  <div class="panel" id="panel-cadence"></div>
   <div class="panel" id="panel-milestones"></div>
   <div class="panel" id="panel-plays"></div>
   <div class="panel" id="panel-scorecard"></div>
-  <div class="panel" id="panel-leaderboard"></div>
+  <div class="panel active" id="panel-leaderboard"></div>
 
   <footer>
     Each cadence task scores against its own timing rule, set the outcome from its dropdown. Grading is now percentage of that quarter's own max delivery score, since Q1 has far more scorable tasks (max 45) than Q2–Q4 (max 12, 9, 12) — a flat point threshold would've made the later quarters nearly impossible to clear on delivery alone. Bonus points from the Wins & Bonus Log split into two tiers: major wins (15+ points — expansion order, before/after win, promoter) count in full, uncapped, so a real win visibly moves the score, even past 100%. Smaller signals (touchpoints, feature ships, feedback) count up to 50% of that quarter's delivery max, so routine activity alone can't inflate a thin quarter to Champion. "Formal renewal proposal delivered" (Month 11) didn't come with a specified point value, it's defaulted to 3/0 to match the other one-time deliverables, flag if that's wrong. Data syncs to GitHub, shared by anyone with a token for this repo.
@@ -382,8 +382,9 @@ function applyViewerMode(on){
     if(el) el.disabled = !!on;
   });
   renderAll();
-  // Viewers land on All Customers, not the Fixed Cadence onboarding
-  // checklist that makes sense for editors mid-rollout.
+  // All Customers is the default landing tab for everyone now (set in the
+  // static markup + pepAppInit), but if someone already navigated elsewhere
+  // before turning viewer mode on mid-session, snap back to it.
   if(on){
     const active = document.querySelector('.tab.active');
     if(active && active.dataset.panel !== 'leaderboard'){
@@ -1766,6 +1767,9 @@ window.pepAppInit = async function(){
   renderAll();
   const list = await loadCustomersList();
   await populateSelect(list);
+  // All Customers is the default active panel now, but renderAll() doesn't
+  // render it (it's only ever rendered on-demand via the tab click handler).
+  await renderLeaderboard();
 };
 </script>
 </body>
