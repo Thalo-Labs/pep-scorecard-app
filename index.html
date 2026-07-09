@@ -672,6 +672,7 @@ function contract0(){
 let state = defaultCustomerState();
 let saveTimer = null;
 let selectedQuarter = 'q1';
+let selectedYear = 1;
 
 function ownerPills(owners){
   return owners.map(function(o){ return '<span class="pill" style="background:'+OWNER_COLOR[o]+'">'+OWNER_LABEL[o]+'</span>'; }).join('');
@@ -760,33 +761,48 @@ function renderMilestones(){
   '</div>'+
   (firstSigned ? '' : '<div class="cap-note" style="margin-top:6px;">Set a "Sign date" on a contract above first — that\'s the anchor date entries use to figure out which month/quarter a given date falls into.</div>');
 
-  html += '<div class="log-list">';
-  Object.keys(QUARTER_LABEL).forEach(function(q){
-    html += '<div class="field-label" style="margin-top:14px;display:flex;align-items:center;gap:8px;"><span class="quarter-badge" style="background:'+QUARTER_COLOR[q]+';">'+QUARTER_LABEL[q]+'</span> log</div>';
-    let anyRows = false;
-    if(q === 'q1' && state.info.survey1SupportScore){
-      anyRows = true;
-      const score = state.info.survey1SupportScore;
-      const pts = surveyBonusPoints(score);
-      html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
-        (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
-        '<span class="cap-note">auto, change the score above to update</span></div>';
-    }
-    const entries = (state.bonusLog[q] || []).map(function(entry, idx){ return {entry:entry, idx:idx}; })
-      .sort(function(a,b){ return (a.entry.date||'').localeCompare(b.entry.date||'') || (a.entry.month||0)-(b.entry.month||0); });
-    if(entries.length) anyRows = true;
-    entries.forEach(function(pair){
-      const entry = pair.entry;
-      const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-      const whenLabel = entry.date ? entry.date : (entry.month ? 'Month '+entry.month : '');
-      html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b>'+
-        (entry.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(entry.notes)+'</span>' : '')+
-        '</span><button data-remove-log="'+q+':'+pair.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
-    });
-    if(!anyRows){
-      html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet.</div>';
-    }
+  // bonusLog only has 4 buckets (q1-q4), no year of its own, so a tenured
+  // customer's month-15 (year 2 Q1) entries land in the same array as their
+  // month-2 (year 1 Q1) entries. Grouping by (year, quarter) instead of just
+  // quarter is what keeps those from reading as one overlapping pile.
+  let maxYear = 1;
+  const milestonesQInfo = currentQuarterInfo(state.info.contracts);
+  if(milestonesQInfo && !milestonesQInfo.special) maxYear = Math.max(maxYear, milestonesQInfo.year);
+  Object.keys(state.bonusLog).forEach(function(q){
+    (state.bonusLog[q] || []).forEach(function(entry){ maxYear = Math.max(maxYear, entry.year || 1); });
   });
+
+  html += '<div class="log-list">';
+  for(let year = 1; year <= maxYear; year++){
+    Object.keys(QUARTER_LABEL).forEach(function(q){
+      const yearPrefix = year > 1 ? 'Y'+year+' ' : '';
+      html += '<div class="field-label" style="margin-top:14px;display:flex;align-items:center;gap:8px;"><span class="quarter-badge" style="background:'+QUARTER_COLOR[q]+';">'+yearPrefix+QUARTER_LABEL[q]+'</span> log</div>';
+      let anyRows = false;
+      if(q === 'q1' && year === 1 && state.info.survey1SupportScore){
+        anyRows = true;
+        const score = state.info.survey1SupportScore;
+        const pts = surveyBonusPoints(score);
+        html += '<div class="log-item"><span>Survey #1 response — supported by Thalo: <b>'+score+'/5</b>'+
+          (pts>0 ? ' — <b>+'+pts+' pts</b>' : ' — no bonus threshold met')+'</span>'+
+          '<span class="cap-note">auto, change the score above to update</span></div>';
+      }
+      const entries = (state.bonusLog[q] || []).map(function(entry, idx){ return {entry:entry, idx:idx}; })
+        .filter(function(pair){ return (pair.entry.year||1) === year; })
+        .sort(function(a,b){ return (a.entry.date||'').localeCompare(b.entry.date||'') || (a.entry.month||0)-(b.entry.month||0); });
+      if(entries.length) anyRows = true;
+      entries.forEach(function(pair){
+        const entry = pair.entry;
+        const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
+        const whenLabel = entry.date ? entry.date : (entry.month ? 'Month '+entry.month : '');
+        html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b>'+
+          (entry.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(entry.notes)+'</span>' : '')+
+          '</span><button data-remove-log="'+q+':'+pair.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
+      });
+      if(!anyRows){
+        html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet.</div>';
+      }
+    });
+  }
   html += '</div>';
 
   el.innerHTML = html;
@@ -817,7 +833,8 @@ function renderMilestones(){
     const ms = MILESTONES.find(function(m){ return m.id===msId; });
     const points = msId === 'ms-other' ? (parseInt(pointsInput.value, 10) || 0) : ms.points;
     const q = quarterForMonth(month);
-    state.bonusLog[q].push({msId:msId, points:points, month:month, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
+    const year = yearForMonth(month);
+    state.bonusLog[q].push({msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
     scheduleSave();
     dateInput.value = '';
     typeSelect.value = '';
@@ -922,10 +939,12 @@ function deliveryPointsForQuarter(q){
   });
   return earned;
 }
-function bonusPointsForQuarter(q){
-  const log = state.bonusLog[q] || [];
+function bonusPointsForQuarter(year, q){
+  const log = (state.bonusLog[q] || []).filter(function(e){ return (e.year||1) === year; });
   let total = log.reduce(function(sum, e){ return sum + e.points; }, 0);
-  if(q === 'q1') total += surveyBonusPoints(state.info.survey1SupportScore);
+  // Survey #1 is a single one-time field, not logged per year — it only
+  // ever belongs to the customer's first Q1.
+  if(q === 'q1' && year === 1) total += surveyBonusPoints(state.info.survey1SupportScore);
   return total;
 }
 
@@ -942,21 +961,21 @@ function bonusPointsForQuarter(q){
 const MAJOR_BONUS_THRESHOLD = 15;
 const BONUS_CAP_RATIO = 0.5;
 
-function splitBonusForQuarter(q){
-  const log = state.bonusLog[q] || [];
+function splitBonusForQuarter(year, q){
+  const log = (state.bonusLog[q] || []).filter(function(e){ return (e.year||1) === year; });
   let major = 0, minor = 0;
   log.forEach(function(e){
     if(e.points >= MAJOR_BONUS_THRESHOLD) major += e.points;
     else minor += e.points;
   });
-  if(q === 'q1') minor += surveyBonusPoints(state.info.survey1SupportScore);
+  if(q === 'q1' && year === 1) minor += surveyBonusPoints(state.info.survey1SupportScore);
   return {major:major, minor:minor};
 }
 function bonusCapForQuarter(q){
   return Math.round(maxDeliveryForQuarter(q) * BONUS_CAP_RATIO);
 }
-function scoredBonusForQuarter(q){
-  const split = splitBonusForQuarter(q);
+function scoredBonusForQuarter(year, q){
+  const split = splitBonusForQuarter(year, q);
   return split.major + Math.min(split.minor, bonusCapForQuarter(q));
 }
 function effectiveMaxForQuarter(q){
@@ -1009,6 +1028,18 @@ function quarterForMonth(month){
   const zeroIndexed = ((m - 1) % 12); // wraps year 2, 3, etc. back onto q1-q4
   const qIdx = Math.floor(zeroIndexed / 3);
   return ['q1','q2','q3','q4'][qIdx];
+}
+
+// bonusLog is still just {q1:[],q2:[],q3:[],q4:[]} — no year in the storage
+// shape — so every entry carries its own tenure-year, computed from its
+// absolute month the same way currentQuarterInfo derives year for the
+// Current Q badge. Without this, a month-15 entry (year 2, Q1) and a
+// month-2 entry (year 1, Q1) land in the same 'q1' array with nothing to
+// tell them apart, and every quarter total silently sums across all years.
+function yearForMonth(month){
+  const m = parseInt(month, 10);
+  if(!m || m < 1) return 1;
+  return Math.floor((m - 1) / 12) + 1;
 }
 
 function monthsBetween(startStr, endStr){
@@ -1088,25 +1119,33 @@ function renderScorecard(){
     el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">Pick or add a customer above to see its scorecard.</div></div></div>';
     return;
   }
+
+  const qInfo = currentQuarterInfo(state.info.contracts);
+  const maxYear = Math.max(1, (qInfo && !qInfo.special) ? qInfo.year : 1);
+  if(selectedYear > maxYear) selectedYear = maxYear;
+
   const del = deliveryPointsForQuarter(selectedQuarter);
-  const bonus = bonusPointsForQuarter(selectedQuarter);
-  const bonusSplit = splitBonusForQuarter(selectedQuarter);
-  const scoredBonus = scoredBonusForQuarter(selectedQuarter);
+  const bonus = bonusPointsForQuarter(selectedYear, selectedQuarter);
+  const bonusSplit = splitBonusForQuarter(selectedYear, selectedQuarter);
+  const scoredBonus = scoredBonusForQuarter(selectedYear, selectedQuarter);
   const bonusCap = bonusCapForQuarter(selectedQuarter);
   const total = del + scoredBonus;
   const maxDel = maxDeliveryForQuarter(selectedQuarter);
   const effMax = effectiveMaxForQuarter(selectedQuarter);
   const pct = effMax > 0 ? Math.round((total/effMax)*100) : 0;
   const tier = tierFor(pct);
+  const yearLabel = selectedYear > 1 ? 'Y'+selectedYear+' ' : '';
 
-  let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="score-quarter-select">'+
+  let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Year</label> <select id="score-year-select">'+
+    Array.from({length:maxYear}, function(_, i){ return i+1; }).map(function(y){ return '<option value="'+y+'" '+(y===selectedYear?'selected':'')+'>Year '+y+'</option>'; }).join('')+
+    '</select> <label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Quarter</label> <select id="score-quarter-select">'+
     Object.keys(QUARTER_LABEL).map(function(q){ return '<option value="'+q+'" '+(q===selectedQuarter?'selected':'')+'>'+QUARTER_LABEL[q]+'</option>'; }).join('')+
     '</select></div>';
 
-  const qInfo = currentQuarterInfo(state.info.contracts);
   if(qInfo){
+    const viewingMatchesCurrent = qInfo.special ? (selectedYear===1 && selectedQuarter==='q1') : (qInfo.year===selectedYear && qInfo.q===selectedQuarter);
     html += '<div class="quarter-note">'+currentCustomer+' is currently in '+quarterBadgeHtml(qInfo)+
-      (!qInfo.special && qInfo.q!==selectedQuarter?' <span class="quarter-mismatch">— you\'re viewing '+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
+      (!viewingMatchesCurrent?' <span class="quarter-mismatch">— you\'re viewing '+yearLabel+QUARTER_LABEL[selectedQuarter]+'</span>':'')+'</div>';
   }
 
   const cs = contractSummary(state.info.contracts);
@@ -1118,7 +1157,7 @@ function renderScorecard(){
   const typeBadge = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:10px;padding:3px 9px;margin-left:8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '';
 
   html += '<div class="score-hero">'+
-    '<div class="eyebrow">'+currentCustomer+' · '+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
+    '<div class="eyebrow">'+currentCustomer+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
     (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
     '<div class="score-grid">'+
       '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
@@ -1140,18 +1179,22 @@ function renderScorecard(){
   html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
   Object.keys(QUARTER_LABEL).forEach(function(q){
     const d = deliveryPointsForQuarter(q);
-    const b = bonusPointsForQuarter(q);
-    const sb = scoredBonusForQuarter(q);
+    const b = bonusPointsForQuarter(selectedYear, q);
+    const sb = scoredBonusForQuarter(selectedYear, q);
     const m = maxDeliveryForQuarter(q);
     const em = effectiveMaxForQuarter(q);
     const t = d + sb;
     const p = em > 0 ? Math.round((t/em)*100) : 0;
     const tq = tierFor(p);
-    html += '<tr><td>'+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+sb+(b>sb?' <span style="color:var(--ink-soft);">(of +'+b+' logged)</span>':'')+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
+    html += '<tr><td>'+yearLabel+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+sb+(b>sb?' <span style="color:var(--ink-soft);">(of +'+b+' logged)</span>':'')+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
   });
   html += '</tbody></table>';
 
   el.innerHTML = html;
+  document.getElementById('score-year-select').addEventListener('change', function(e){
+    selectedYear = parseInt(e.target.value, 10) || 1;
+    renderScorecard();
+  });
   document.getElementById('score-quarter-select').addEventListener('change', function(e){
     selectedQuarter = e.target.value;
     renderScorecard();
@@ -1205,9 +1248,10 @@ async function renderLeaderboard(){
     // be selected for someone else.
     const currentQInfo = currentQuarterInfo(s.info.contracts);
     const scoringQ = currentQInfo ? (currentQInfo.special === 'first30' ? 'q1' : currentQInfo.q) : null;
+    const scoringYear = currentQInfo ? (currentQInfo.special === 'first30' ? 1 : currentQInfo.year) : null;
     const d = scoringQ ? deliveryPointsForQuarter(scoringQ) : 0;
-    const b = scoringQ ? bonusPointsForQuarter(scoringQ) : 0;
-    const sb = scoringQ ? scoredBonusForQuarter(scoringQ) : 0;
+    const b = scoringQ ? bonusPointsForQuarter(scoringYear, scoringQ) : 0;
+    const sb = scoringQ ? scoredBonusForQuarter(scoringYear, scoringQ) : 0;
     const m = scoringQ ? maxDeliveryForQuarter(scoringQ) : 0;
     const em = scoringQ ? effectiveMaxForQuarter(scoringQ) : 0;
     const lastWin = lastWinInfo(s.bonusLog || {});
@@ -1391,6 +1435,14 @@ async function loadCustomerState(name){
       if(c.renewsContractId === undefined) c.renewsContractId = '';
     });
     if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
+    // Backfill year onto bonus log entries logged before the tenure-year
+    // field existed — inferred from the month each entry already stored,
+    // so 2025's Q1 and 2026's Q1 entries stop colliding in the same bucket.
+    Object.keys(merged.bonusLog || {}).forEach(function(q){
+      (merged.bonusLog[q] || []).forEach(function(entry){
+        if(entry.year === undefined) entry.year = yearForMonth(entry.month);
+      });
+    });
     if(migrated){
       window.storage.set(customerStorageKey(name), JSON.stringify(merged)).catch(function(){});
     }
