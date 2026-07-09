@@ -382,6 +382,15 @@ function applyViewerMode(on){
     if(el) el.disabled = !!on;
   });
   renderAll();
+  // Viewers land on All Customers, not the Fixed Cadence onboarding
+  // checklist that makes sense for editors mid-rollout.
+  if(on){
+    const active = document.querySelector('.tab.active');
+    if(active && active.dataset.panel !== 'leaderboard'){
+      const lbTab = document.querySelector('.tab[data-panel="leaderboard"]');
+      if(lbTab) lbTab.click();
+    }
+  }
 }
 
 async function tryConnectGh(cfg, silent){
@@ -1315,6 +1324,40 @@ function lastWinCell(entry){
   return '<span title="'+escAttr(label)+'" style="border-bottom:1px dotted var(--ink-soft);">'+relativeTimeLabel(entry.date)+'</span>';
 }
 
+// Chronological sort value for the Current Q badge: First 30 Days sorts
+// before Year 1 Q1, then each (year, quarter) increases in tenure order.
+function currentQSortValue(info){
+  if(!info) return -1;
+  if(info.special === 'first30') return 0;
+  return (info.year-1)*4 + ['q1','q2','q3','q4'].indexOf(info.q) + 1;
+}
+
+// Sort accessors only — row HTML rendering is untouched below. Order here
+// matches the header/row order exactly (excluding the plain "#" column).
+const LEADERBOARD_COLUMNS = [
+  {key:'name', label:'Customer', get:function(r){ return (r.name||'').toLowerCase(); }},
+  {key:'type', label:'Type', get:function(r){ return (CUSTOMER_TYPE_LABEL[r.info.customerType]||'').toLowerCase(); }},
+  {key:'tier', label:'Tier', get:function(r){ return r.pct; }},
+  {key:'currentQ', label:'Current Q', get:function(r){ return currentQSortValue(r.currentQInfo); }},
+  {key:'sidekicks', label:'Total Sidekicks', get:function(r){ return r.cs.totalSidekicks||0; }},
+  {key:'contracts', label:'# Contracts', get:function(r){ return r.cs.count||0; }},
+  {key:'firstSigned', label:'First signed', get:function(r){ return r.cs.firstSigned||''; }},
+  {key:'firstShipped', label:'First shipped', get:function(r){ return r.c0.shippedDate||''; }},
+  {key:'firstInstall', label:'First install', get:function(r){ return r.c0.installDate||''; }},
+  {key:'onboarding', label:'Onboarding', get:function(r){ return r.info.onboardingMeetingDate||''; }},
+  {key:'firstFlag', label:'First flag', get:function(r){ return r.info.firstFlagDate||''; }},
+  {key:'checkin', label:'Check-in', get:function(r){ return r.info.checkinDate||''; }},
+  {key:'survey1', label:'Survey #1', get:function(r){ return r.info.survey1SentDate||''; }},
+  {key:'survey1score', label:'Survey #1 score', get:function(r){ return parseInt(r.info.survey1SupportScore,10)||0; }},
+  {key:'nextRenewal', label:'Next renewal', get:function(r){ return r.cs.nextRenewal||''; }},
+  {key:'lastWin', label:'Last win', get:function(r){ return (r.lastWin&&r.lastWin.date)||''; }},
+  {key:'delivery', label:'Delivery / Max', get:function(r){ return r.delivery; }},
+  {key:'bonus', label:'Bonus (scored)', get:function(r){ return r.scoredBonus; }},
+  {key:'total', label:'Total', get:function(r){ return r.total; }},
+  {key:'pct', label:'% of max', get:function(r){ return r.pct; }}
+];
+let leaderboardSort = {key:'pct', dir:'desc'};
+
 async function renderLeaderboard(){
   const el = document.getElementById('panel-leaderboard');
   el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading customers…</div>';
@@ -1357,11 +1400,19 @@ async function renderLeaderboard(){
     return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment};
   }));
 
-  rows.sort(function(a,b){ return b.pct - a.pct; });
+  const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
+  rows.sort(function(a,b){
+    const av = sortCol.get(a), bv = sortCol.get(b);
+    const cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+    return leaderboardSort.dir === 'asc' ? cmp : -cmp;
+  });
 
-  let html = '<div class="table-scroll"><table class="leaderboard"><thead><tr>'+
-    '<th>#</th><th>Customer</th><th>Type</th><th>Tier</th><th>Current Q</th><th>Total Sidekicks</th><th># Contracts</th><th>First signed</th><th>First shipped</th><th>First install</th><th>Onboarding</th><th>First flag</th><th>Check-in</th><th>Survey #1</th><th>Survey #1 score</th><th>Next renewal</th><th>Last win</th>'+
-    '<th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th>'+
+  let html = '<div class="table-scroll"><table class="leaderboard"><thead><tr><th data-sort-key="">#</th>'+
+    LEADERBOARD_COLUMNS.map(function(col){
+      const isSorted = leaderboardSort.key === col.key;
+      const arrow = isSorted ? (leaderboardSort.dir==='asc' ? ' ▲' : ' ▼') : '';
+      return '<th data-sort-key="'+col.key+'">'+col.label+arrow+'</th>';
+    }).join('')+
     '</tr></thead><tbody>';
   rows.forEach(function(r, i){
     const typeKey = r.info.customerType;
@@ -1390,6 +1441,18 @@ async function renderLeaderboard(){
   html += '</tbody></table></div>';
 
   el.innerHTML = html;
+  el.querySelectorAll('th[data-sort-key]').forEach(function(th){
+    th.addEventListener('click', function(){
+      const key = th.dataset.sortKey;
+      if(!key){ leaderboardSort = {key:'pct', dir:'desc'}; renderLeaderboard(); return; }
+      if(leaderboardSort.key === key){
+        leaderboardSort.dir = leaderboardSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        leaderboardSort = {key:key, dir:'asc'};
+      }
+      renderLeaderboard();
+    });
+  });
 }
 
 function flashSaveStatus(msg){
