@@ -126,6 +126,8 @@ table.leaderboard th:nth-child(2){background:#FAFAF7;z-index:3;}
 table.leaderboard tr.this-customer td:nth-child(2){background:#FFF7E8;}
 .rank{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
 .overdue{color:var(--t-warmup);font-weight:700;}
+.hover-tip-popup{position:fixed;z-index:9999;background:#1B2430;color:#fff;font-size:11.5px;font-family:'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:6px;max-width:320px;line-height:1.4;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25);}
+[data-hover-tip]{cursor:default;}
 .quarter-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--eg);color:#fff;letter-spacing:.03em;}
 .quarter-note{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .quarter-mismatch{color:var(--t-ontrack);}
@@ -1322,7 +1324,10 @@ function lastWinCell(entry){
   if(!entry) return '—';
   const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
   const label = entry.date+' — '+(ms?ms.trigger:entry.msId)+(entry.notes?': '+entry.notes:'');
-  return '<span title="'+escAttr(label)+'" style="border-bottom:1px dotted var(--ink-soft);">'+relativeTimeLabel(entry.date)+'</span>';
+  // Native title tooltips are unreliable here (slow to appear, sometimes
+  // don't show at all depending on browser/OS) -- a custom hover popup
+  // (wired up once, near the bottom of the file) shows immediately instead.
+  return '<span data-hover-tip="'+escAttr(label)+'" style="border-bottom:1px dotted var(--ink-soft);">'+relativeTimeLabel(entry.date)+'</span>';
 }
 
 // Chronological sort value for the Current Q badge: First 30 Days sorts
@@ -1424,7 +1429,8 @@ async function renderLeaderboard(){
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
-    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+r.name+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
+    const customerLink = '<span data-goto-customer="'+escAttr(r.name)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);">'+r.name+'</span>';
+    html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
@@ -1644,13 +1650,23 @@ document.getElementById('add-customer').addEventListener('click', async function
   document.getElementById('customer-select').dispatchEvent(new Event('change'));
 });
 
-document.getElementById('customer-select').addEventListener('change', async function(e){
+async function selectCustomerAndRender(name){
   await flushSave();
-  const name = e.target.value;
   currentCustomer = name || null;
   state = currentCustomer ? await loadCustomerState(currentCustomer) : defaultCustomerState();
   if(currentCustomer) runAutoscore();
+  // Default the Scorecard tab to whichever year/quarter this customer is
+  // actually in right now, instead of leaving whatever was selected for
+  // the previous customer.
+  const qInfo = currentCustomer ? currentQuarterInfo(state.info.contracts) : null;
+  if(qInfo){
+    selectedYear = qInfo.special ? 1 : qInfo.year;
+    selectedQuarter = qInfo.special ? 'q1' : qInfo.q;
+  }
   renderAll();
+}
+document.getElementById('customer-select').addEventListener('change', async function(e){
+  await selectCustomerAndRender(e.target.value);
 });
 
 function afterDateEdit(){
@@ -1758,6 +1774,46 @@ document.addEventListener('change', function(e){
     scheduleSave();
     updateProgress();
   }
+});
+
+// Custom hover tooltip for [data-hover-tip] elements (e.g. Last win) --
+// registered once via delegation so it keeps working across re-renders,
+// rather than relying on the native title attribute's slow/inconsistent
+// browser-native tooltip.
+let hoverTipEl = null;
+document.addEventListener('mouseover', function(e){
+  const el = e.target.closest('[data-hover-tip]');
+  if(!el) return;
+  if(hoverTipEl) hoverTipEl.remove();
+  const tip = document.createElement('div');
+  tip.className = 'hover-tip-popup';
+  tip.textContent = el.dataset.hoverTip;
+  document.body.appendChild(tip);
+  const r = el.getBoundingClientRect();
+  let top = r.top - tip.offsetHeight - 6;
+  if(top < 4) top = r.bottom + 6;
+  let left = Math.min(r.left, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.top = top+'px';
+  tip.style.left = Math.max(4,left)+'px';
+  hoverTipEl = tip;
+});
+document.addEventListener('mouseout', function(e){
+  const el = e.target.closest('[data-hover-tip]');
+  if(!el) return;
+  if(hoverTipEl){ hoverTipEl.remove(); hoverTipEl = null; }
+});
+
+// Clicking a customer's name anywhere (currently just the All Customers
+// table) jumps straight to their Scorecard, defaulting to their current
+// quarter (selectCustomerAndRender already sets that).
+document.addEventListener('click', async function(e){
+  const el = e.target.closest('[data-goto-customer]');
+  if(!el) return;
+  const name = el.dataset.gotoCustomer;
+  document.getElementById('customer-select').value = name;
+  await selectCustomerAndRender(name);
+  const scorecardTab = document.querySelector('.tab[data-panel="scorecard"]');
+  if(scorecardTab) scorecardTab.click();
 });
 
 let pepAppInitialized = false;
