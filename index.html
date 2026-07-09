@@ -1027,7 +1027,7 @@ function contractSummary(contracts){
     .map(function(c){ return c.expirationDate; })
     .sort();
 
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = nycTodayStr();
   // Prefer the soonest upcoming date among the still-live contracts; only
   // fall back to a past date if every live contract has already lapsed
   // (so a fully overdue customer still shows something, still flagged red).
@@ -1063,14 +1063,32 @@ function yearForMonth(month){
   return Math.floor((m - 1) / 12) + 1;
 }
 
+// Every "today" comparison in this file is anchored to America/New_York,
+// not the viewer's own browser timezone. Two reasons: (1) 'YYYY-MM-DD'
+// strings parse as UTC midnight, and reading them back with local getters
+// (getFullYear/getMonth/getDate) silently rolls the date back a calendar
+// day for anyone west of UTC — which was throwing month/quarter math off
+// by one right around day-of-month boundaries; (2) without a fixed anchor,
+// two people in different timezones could compute a different "current
+// quarter" for the exact same shared customer data. Parsing everything
+// into plain {y,mo,d} integers and doing the arithmetic ourselves avoids
+// Date's local-timezone getters entirely.
+function nycTodayStr(){
+  return new Intl.DateTimeFormat('en-CA', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
+}
+function dateParts(dateStr){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr||'');
+  if(!m) return null;
+  return {y:parseInt(m[1],10), mo:parseInt(m[2],10), d:parseInt(m[3],10)};
+}
+
 function monthsBetween(startStr, endStr){
-  if(!startStr) return null;
-  const d1 = new Date(startStr);
-  if(isNaN(d1)) return null;
-  const d2 = endStr ? new Date(endStr) : new Date();
-  if(isNaN(d2)) return null;
-  let months = (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth());
-  if(d2.getDate() < d1.getDate()) months -= 1;
+  const p1 = dateParts(startStr);
+  if(!p1) return null;
+  const p2 = dateParts(endStr || nycTodayStr());
+  if(!p2) return null;
+  let months = (p2.y-p1.y)*12 + (p2.mo-p1.mo);
+  if(p2.d < p1.d) months -= 1;
   return Math.max(0, months);
 }
 function monthsSince(dateStr){
@@ -1086,11 +1104,12 @@ function monthNumberForDate(dateStr, firstSigned){
 }
 
 function daysSince(dateStr){
-  if(!dateStr) return null;
-  const d = new Date(dateStr);
-  if(isNaN(d)) return null;
-  const now = new Date();
-  return Math.floor((now - d) / (1000*60*60*24));
+  const p1 = dateParts(dateStr);
+  if(!p1) return null;
+  const p2 = dateParts(nycTodayStr());
+  const t1 = Date.UTC(p1.y, p1.mo-1, p1.d);
+  const t2 = Date.UTC(p2.y, p2.mo-1, p2.d);
+  return Math.floor((t2 - t1) / (1000*60*60*24));
 }
 
 function currentQuarterInfo(contracts){
@@ -1114,10 +1133,7 @@ function quarterBadgeHtml(info){
 
 function isRenewalOverdue(dateStr){
   if(!dateStr) return false;
-  const d = new Date(dateStr);
-  if(isNaN(d)) return false;
-  const today = new Date(); today.setHours(0,0,0,0);
-  return d < today;
+  return dateStr < nycTodayStr();
 }
 
 // "Active" = today falls within a contract's own sign-date/end-date range.
@@ -1126,7 +1142,7 @@ function isRenewalOverdue(dateStr){
 // engagement tier/score; a customer can be scoring well with no currently
 // active contract, or vice versa, and both facts should stay visible.
 function hasActiveContract(contracts){
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = nycTodayStr();
   return (contracts||[]).some(function(c){
     if(!c.signDate || c.signDate > todayStr) return false;
     if(c.expirationDate && c.expirationDate < todayStr) return false;
