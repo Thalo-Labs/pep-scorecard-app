@@ -536,13 +536,13 @@ const CADENCE = [
       scoring:S({label:'Sent by day 30 (+3)',points:3},{label:'Sent after day 30 (+1)',points:1})}
   ]},
   {phase:'Month 2', quarter:'q1', items:[
-    {id:'m2', time:'Month 2', owners:['dj'], flexible:true, month:2, task:'Monthly touchpoint — pick a play',
+    {id:'m2', time:'Month 2', owners:['dj'], flexible:true, month:2, recurring:true, task:'Monthly touchpoint — pick a play',
       internal:'Pull from Engagement Plays: swag, a feature update, or a quick call.',
       customer:'Varies by customer, see Engagement Plays.',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
   ]},
   {phase:'Month 3 — Quarterly review', quarter:'q1', items:[
-    {id:'q1win', time:'Month 3', owners:['dj','eg'], month:3, task:'Quarterly review',
+    {id:'q1win', time:'Month 3', owners:['dj','eg'], month:3, recurring:true, task:'Quarterly review',
       internal:'DJ emails the quarterly baseline report, collects feedback, surfaces one publicly-shareable win. EG starts scoping Phase 2.',
       customer:'"You\'re dispatching smarter."',
       scoring:S({label:'Done (+3)',points:3},{label:'Not done (0)',points:0})}
@@ -644,12 +644,19 @@ function tierFor(pct){
   for(const t of TIERS){ if(pct >= t.min) return t; }
   return TIERS[TIERS.length-1];
 }
-function maxDeliveryForQuarter(q){
+// Q1's 45-point max is almost entirely one-time onboarding events (kickoff,
+// install, first flag, first report) that physically can't recur — a
+// customer doesn't get onboarded again in year 2. Only items explicitly
+// flagged `recurring` (the Month 2 touchpoint and the quarterly review)
+// still apply once a customer is past their first year. Q2-Q4 have no such
+// distinction (nothing asked for it there), so year only matters for q1.
+function maxDeliveryForQuarter(year, q){
   let max = 0;
   CADENCE.forEach(function(group){
     if(group.quarter !== q) return;
     group.items.forEach(function(item){
       if(!item.scoring) return;
+      if(q === 'q1' && year > 1 && !item.recurring) return;
       max += Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
     });
   });
@@ -910,27 +917,41 @@ function runAutoscore(){
 // used to work this way too but were reverted to plain manual checkboxes —
 // "win" is a Wins & Bonus Log concept only now, not a Fixed Cadence one — so
 // this only ever runs for item.flexible items in practice.
-function derivedTouchpointPoints(item, q){
+function derivedTouchpointPoints(item, q, year){
   const donePoints = Math.max.apply(null, item.scoring.map(function(o){ return o.points; }));
-  const log = state.bonusLog[q] || [];
-  const loggedDone = log.some(function(e){ return e.month === item.month; });
+  // item.month is always the year-1 month number (e.g. Month 2 touchpoint =
+  // month 2) — for a later year's recurring item, the actual absolute month
+  // to look for in the log shifts by a full year each time around.
+  const absoluteMonth = ((year||1) - 1) * 12 + item.month;
+  const log = (state.bonusLog[q] || []).filter(function(e){ return (e.year||1) === (year||1); });
+  const loggedDone = log.some(function(e){ return e.month === absoluteMonth; });
+  if((year||1) > 1) return loggedDone ? donePoints : 0;
   // Grandfather in whatever was already marked Done the old manual way before
   // this item switched to log-derived scoring — otherwise every customer's
   // pre-existing Q2-Q4 completions would evaporate to 0 the moment this
   // deploys, just because nothing's been backfilled into the new log yet.
+  // Only ever applies to year 1 — there's no legacy manual data for a year
+  // that didn't exist yet when this system was flat/year-less.
   const oldIdx = state.deliveries[item.id] || 0;
   const oldManualDone = item.scoring[oldIdx] && item.scoring[oldIdx].points > 0;
   return (loggedDone || oldManualDone) ? donePoints : 0;
 }
 
-function deliveryPointsForQuarter(q){
+function deliveryPointsForQuarter(year, q){
   let earned = 0;
   CADENCE.forEach(function(group){
     if(group.quarter !== q) return;
     group.items.forEach(function(item){
       if(!item.scoring) return;
-      if(item.month !== undefined && item.flexible){
-        earned += derivedTouchpointPoints(item, q);
+      if(q === 'q1' && year > 1 && !item.recurring) return;
+      // Quarterly review (q1win) stays the Fixed Cadence tab's manual
+      // checkbox for year 1, per the earlier decision that "win" is a Wins &
+      // Bonus Log concept only, not a Cadence one. But that checkbox is a
+      // single value with no year of its own — for year 2+ there's nowhere
+      // else to mark it done, so it switches to log-derived from year 2
+      // onward, the same mechanism the Month 2 touchpoint already uses.
+      if(item.month !== undefined && (item.flexible || (item.recurring && year > 1))){
+        earned += derivedTouchpointPoints(item, q, year);
         return;
       }
       const idx = state.deliveries[item.id] || 0;
@@ -971,15 +992,15 @@ function splitBonusForQuarter(year, q){
   if(q === 'q1' && year === 1) minor += surveyBonusPoints(state.info.survey1SupportScore);
   return {major:major, minor:minor};
 }
-function bonusCapForQuarter(q){
-  return Math.round(maxDeliveryForQuarter(q) * BONUS_CAP_RATIO);
+function bonusCapForQuarter(year, q){
+  return Math.round(maxDeliveryForQuarter(year, q) * BONUS_CAP_RATIO);
 }
 function scoredBonusForQuarter(year, q){
   const split = splitBonusForQuarter(year, q);
-  return split.major + Math.min(split.minor, bonusCapForQuarter(q));
+  return split.major + Math.min(split.minor, bonusCapForQuarter(year, q));
 }
-function effectiveMaxForQuarter(q){
-  return maxDeliveryForQuarter(q) + bonusCapForQuarter(q);
+function effectiveMaxForQuarter(year, q){
+  return maxDeliveryForQuarter(year, q) + bonusCapForQuarter(year, q);
 }
 
 function contractSummary(contracts){
@@ -1124,14 +1145,14 @@ function renderScorecard(){
   const maxYear = Math.max(1, (qInfo && !qInfo.special) ? qInfo.year : 1);
   if(selectedYear > maxYear) selectedYear = maxYear;
 
-  const del = deliveryPointsForQuarter(selectedQuarter);
+  const del = deliveryPointsForQuarter(selectedYear, selectedQuarter);
   const bonus = bonusPointsForQuarter(selectedYear, selectedQuarter);
   const bonusSplit = splitBonusForQuarter(selectedYear, selectedQuarter);
   const scoredBonus = scoredBonusForQuarter(selectedYear, selectedQuarter);
-  const bonusCap = bonusCapForQuarter(selectedQuarter);
+  const bonusCap = bonusCapForQuarter(selectedYear, selectedQuarter);
   const total = del + scoredBonus;
-  const maxDel = maxDeliveryForQuarter(selectedQuarter);
-  const effMax = effectiveMaxForQuarter(selectedQuarter);
+  const maxDel = maxDeliveryForQuarter(selectedYear, selectedQuarter);
+  const effMax = effectiveMaxForQuarter(selectedYear, selectedQuarter);
   const pct = effMax > 0 ? Math.round((total/effMax)*100) : 0;
   const tier = tierFor(pct);
   const yearLabel = selectedYear > 1 ? 'Y'+selectedYear+' ' : '';
@@ -1178,11 +1199,11 @@ function renderScorecard(){
 
   html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
   Object.keys(QUARTER_LABEL).forEach(function(q){
-    const d = deliveryPointsForQuarter(q);
+    const d = deliveryPointsForQuarter(selectedYear, q);
     const b = bonusPointsForQuarter(selectedYear, q);
     const sb = scoredBonusForQuarter(selectedYear, q);
-    const m = maxDeliveryForQuarter(q);
-    const em = effectiveMaxForQuarter(q);
+    const m = maxDeliveryForQuarter(selectedYear, q);
+    const em = effectiveMaxForQuarter(selectedYear, q);
     const t = d + sb;
     const p = em > 0 ? Math.round((t/em)*100) : 0;
     const tq = tierFor(p);
@@ -1249,11 +1270,11 @@ async function renderLeaderboard(){
     const currentQInfo = currentQuarterInfo(s.info.contracts);
     const scoringQ = currentQInfo ? (currentQInfo.special === 'first30' ? 'q1' : currentQInfo.q) : null;
     const scoringYear = currentQInfo ? (currentQInfo.special === 'first30' ? 1 : currentQInfo.year) : null;
-    const d = scoringQ ? deliveryPointsForQuarter(scoringQ) : 0;
+    const d = scoringQ ? deliveryPointsForQuarter(scoringYear, scoringQ) : 0;
     const b = scoringQ ? bonusPointsForQuarter(scoringYear, scoringQ) : 0;
     const sb = scoringQ ? scoredBonusForQuarter(scoringYear, scoringQ) : 0;
-    const m = scoringQ ? maxDeliveryForQuarter(scoringQ) : 0;
-    const em = scoringQ ? effectiveMaxForQuarter(scoringQ) : 0;
+    const m = scoringQ ? maxDeliveryForQuarter(scoringYear, scoringQ) : 0;
+    const em = scoringQ ? effectiveMaxForQuarter(scoringYear, scoringQ) : 0;
     const lastWin = lastWinInfo(s.bonusLog || {});
     state = savedState;
     const total = d + sb;
@@ -1316,7 +1337,7 @@ function updateProgress(){
     CADENCE.forEach(function(group){
       group.items.forEach(function(item){
         if(item.scoring && item.month !== undefined && item.flexible){
-          if(derivedTouchpointPoints(item, group.quarter) > 0) scored += 1;
+          if(derivedTouchpointPoints(item, group.quarter, 1) > 0) scored += 1;
         }
       });
     });
