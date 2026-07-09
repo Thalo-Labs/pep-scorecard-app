@@ -671,7 +671,7 @@ function genContractId(){
   return 'c-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 }
 function emptyContract(){
-  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:''};
+  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false};
 }
 function defaultCustomerState(){
   return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
@@ -1195,10 +1195,13 @@ function hasActiveContract(contracts){
   });
 }
 
-// Flags a contract that's signed but hasn't shipped yet -- Sidekicks are on
-// order but not out the door. Independent of tier/score, same as No contract.
+// Flags a contract that's signed but hasn't shipped at all yet, or that's
+// only partially shipped (some sensor kits out, some still on order --
+// manually confirmed via the "partially shipped" checkbox once a ship date
+// exists, since there's no per-unit shipped-quantity tracking to infer it
+// from). Independent of tier/score, same as No contract.
 function hasAwaitingShipment(contracts){
-  return (contracts||[]).some(function(c){ return c.signDate && !c.shippedDate; });
+  return (contracts||[]).some(function(c){ return (c.signDate && !c.shippedDate) || c.partiallyShipped; });
 }
 
 function renderScorecard(){
@@ -1468,6 +1471,9 @@ function renderContracts(){
           }).join('')+
         '</select></div>'
       ) : '')+
+      (c.shippedDate ? (
+        '<div class="renewal-line"><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-family:\'IBM Plex Sans\',sans-serif;font-size:12.5px;color:var(--ink);letter-spacing:normal;"><input type="checkbox" data-contract-index="'+i+'" data-field="partiallyShipped" '+(c.partiallyShipped?'checked':'')+' '+disabledAttr+' style="width:auto;"> Only some units shipped so far — still counts as Awaiting shipment</label></div>'
+      ) : '')+
       '</div>';
   });
   el.innerHTML = html;
@@ -1523,6 +1529,7 @@ async function loadCustomerState(name){
       if(!c.id) c.id = genContractId();
       if(c.type === undefined) c.type = '';
       if(c.renewsContractId === undefined) c.renewsContractId = '';
+      if(c.partiallyShipped === undefined) c.partiallyShipped = false;
     });
     if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
     // Backfill year onto bonus log entries logged before the tenure-year
@@ -1624,8 +1631,8 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
   const idx = parseInt(e.target.dataset.contractIndex, 10);
   const field = e.target.dataset.field;
-  state.info.contracts[idx][field] = e.target.value;
-  if(field==='quantityPro' || field==='quantityMax'){ scheduleSave(); return; }
+  state.info.contracts[idx][field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if(field==='quantityPro' || field==='quantityMax' || field==='partiallyShipped'){ scheduleSave(); return; }
   if(field==='type' || field==='renewsContractId'){
     if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
     renderContracts();
@@ -1633,6 +1640,9 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
     scheduleSave();
     return;
   }
+  // The "partially shipped" checkbox only shows once a ship date exists —
+  // re-render so it appears/disappears immediately as that date is set/cleared.
+  if(field==='shippedDate') renderContracts();
   afterDateEdit();
 });
 document.getElementById('contracts-list').addEventListener('click', function(e){
