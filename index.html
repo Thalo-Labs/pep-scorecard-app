@@ -1020,24 +1020,35 @@ function contractSummary(contracts){
   const totalSidekicks = totalPro + totalMax + totalLegacy;
   const firstSigned = contracts.map(function(c){ return c.signDate; }).filter(Boolean).sort()[0] || '';
 
+  const todayStr = nycTodayStr();
+
   // A contract explicitly flagged as "renews" another one supersedes it —
-  // that older contract's end date shouldn't compete for "next renewal,"
-  // and it no longer counts as an open contract. Additions/expansions run
-  // alongside everything else and stay live/open.
+  // that older contract's end date shouldn't compete for "next renewal."
+  // Additions/expansions run alongside everything else and stay in play.
   const supersededIds = {};
   contracts.forEach(function(c){
     if(c.type === 'renewal' && c.renewsContractId) supersededIds[c.renewsContractId] = true;
   });
-  const openContracts = contracts.filter(function(c){ return !supersededIds[c.id]; });
-  const liveExpirations = openContracts
+  const nonSuperseded = contracts.filter(function(c){ return !supersededIds[c.id]; });
+
+  // "Open" (the count shown as "N (M open)") means still live today: not
+  // superseded by a renewal, AND not already past its own end date. A
+  // contract can be non-superseded but simply expired on its own, with no
+  // renewal ever logged for it — that shouldn't still count as open.
+  const openContracts = nonSuperseded.filter(function(c){
+    return !c.expirationDate || c.expirationDate >= todayStr;
+  });
+
+  // "Next renewal" still looks at every non-superseded contract's end date
+  // (not just currently-open ones), so a fully lapsed customer still shows
+  // the most recent overdue date, flagged red, instead of going blank.
+  const liveExpirations = nonSuperseded
     .filter(function(c){ return c.expirationDate; })
     .map(function(c){ return c.expirationDate; })
     .sort();
-
-  const todayStr = nycTodayStr();
-  // Prefer the soonest upcoming date among the still-live contracts; only
-  // fall back to a past date if every live contract has already lapsed
-  // (so a fully overdue customer still shows something, still flagged red).
+  // Prefer the soonest upcoming date among those; only fall back to a past
+  // date if every one has already lapsed (so a fully overdue customer still
+  // shows something, still flagged red).
   const upcoming = liveExpirations.filter(function(d){ return d >= todayStr; });
   const nextRenewal = upcoming.length ? upcoming[0] : (liveExpirations[liveExpirations.length-1] || '');
   return {totalSidekicks:totalSidekicks, totalPro:totalPro+totalLegacy, totalMax:totalMax, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
@@ -1298,7 +1309,7 @@ function lastWinCell(entry){
   if(!entry) return '—';
   const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
   const label = entry.date+' — '+(ms?ms.trigger:entry.msId)+(entry.notes?': '+entry.notes:'');
-  return '<span title="'+escAttr(label)+'" style="cursor:help;">'+relativeTimeLabel(entry.date)+'</span>';
+  return '<span title="'+escAttr(label)+'" style="border-bottom:1px dotted var(--ink-soft);">'+relativeTimeLabel(entry.date)+'</span>';
 }
 
 async function renderLeaderboard(){
@@ -1354,7 +1365,7 @@ async function renderLeaderboard(){
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
     const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>'+
       (r.activeContract ? '' : ' <span class="tier-badge" style="background:#334155;font-size:9.5px;padding:3px 8px;">No contract</span>')+
-      (r.awaitingShipment ? ' <span class="tier-badge" style="background:#2F6FED;font-size:9.5px;padding:3px 8px;">Awaiting shipment</span>' : '');
+      (r.awaitingShipment ? ' <span style="color:#2F6FED;font-weight:600;font-size:11px;">Awaiting shipment</span>' : '');
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
