@@ -1782,6 +1782,7 @@ async function loadSearchIndex(force){
 
 const SEARCH_FIELD_INTENTS = [
   {key:'contract', test:/expir|renew|contract.*end|end.*contract|ending/},
+  {key:'awaitingShipment', test:/waiting|awaiting|not (yet )?shipped/},
   {key:'install', test:/install/},
   {key:'ship', test:/ship/},
   {key:'sign', test:/\bsign/},
@@ -1886,11 +1887,17 @@ function renderFactAnswer(el, record, intent){
     bodyHtml = record.info.survey1SentDate ? '<div class="field-text">'+nameLink+' survey #1 sent <b>'+record.info.survey1SentDate+'</b>'+(record.info.survey1SupportScore ? ', scored <b>'+record.info.survey1SupportScore+'/5</b>' : ' (no score yet)')+'.</div>' : '<div class="field-text">'+nameLink+' has no survey #1 on file.</div>';
   } else if(intent.key==='units'){
     bodyHtml = '<div class="field-text">'+nameLink+' has <b>'+cs.totalSidekicks+'</b> Sidekick'+(cs.totalSidekicks===1?'':'s')+' total ('+cs.totalPro+' Pro / '+cs.totalMax+' Max) across '+cs.count+' contract'+(cs.count===1?'':'s')+'.</div>';
+  } else if(intent.key==='awaitingShipment'){
+    bodyHtml = '<div class="field-text">'+nameLink+(hasAwaitingShipment(record.contracts) ? ' is waiting on a shipment.' : ' has nothing awaiting shipment.')+'</div>';
   } else if(intent.key==='score'){
     const qInfo = currentQuarterInfo(record.contracts);
     bodyHtml = qInfo ? '<div class="field-text">'+nameLink+' is currently in '+(qInfo.special==='first30' ? 'First 30 Days' : ((qInfo.year>1 ? 'Y'+qInfo.year+' ' : '')+qInfo.q.toUpperCase()))+'. Open the Scorecard tab for the full point breakdown.</div>' : '<div class="field-text">'+nameLink+' has no onboarding date yet, so there\u2019s no current quarter to score against.</div>';
   }
   el.innerHTML = bodyHtml;
+}
+
+function rangePhrase(range){
+  return range.label==='overdue' ? 'overdue' : ('ending in the '+range.label);
 }
 
 function renderContractListAcrossCustomers(el, index, timeRange){
@@ -1905,13 +1912,26 @@ function renderContractListAcrossCustomers(el, index, timeRange){
   });
   matches.sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
   if(matches.length===0){
-    el.innerHTML = '<div class="field-text">No contracts ending in the '+range.label+'.</div>';
+    el.innerHTML = '<div class="field-text">No contracts '+rangePhrase(range)+'.</div>';
     return;
   }
-  let html = '<div class="field-text" style="margin-bottom:8px;color:var(--ink-soft);">'+matches.length+' contract'+(matches.length===1?'':'s')+' ending in the '+range.label+':</div>';
+  let html = '<div class="field-text" style="margin-bottom:8px;color:var(--ink-soft);">'+matches.length+' contract'+(matches.length===1?'':'s')+' '+rangePhrase(range)+':</div>';
   html += matches.map(function(m){
     const cls = m.date < todayStr ? 'overdue' : '';
     return '<div class="field-text" style="margin-top:6px;">\u2014 <span class="'+cls+'">'+m.date+'</span> \u2014 '+searchNameLink(m.name)+' ('+contractLine(m.contract)+')</div>';
+  }).join('');
+  el.innerHTML = html;
+}
+
+function renderAwaitingShipmentAcrossCustomers(el, index){
+  const matches = index.filter(function(r){ return hasAwaitingShipment(r.contracts); });
+  if(matches.length===0){
+    el.innerHTML = '<div class="field-text">No customers are waiting on a shipment.</div>';
+    return;
+  }
+  let html = '<div class="field-text" style="margin-bottom:8px;color:var(--ink-soft);">'+matches.length+' customer'+(matches.length===1?'':'s')+' waiting on a shipment:</div>';
+  html += matches.map(function(r){
+    return '<div class="field-text" style="margin-top:6px;">\u2014 '+searchNameLink(r.name)+'</div>';
   }).join('');
   el.innerHTML = html;
 }
@@ -1950,6 +1970,8 @@ async function runSearch(rawQuery){
 
   if(customer && fieldIntent){
     renderFactAnswer(el, index.find(function(r){ return r.name===customer; }), fieldIntent);
+  } else if(!customer && fieldIntent && fieldIntent.key==='awaitingShipment'){
+    renderAwaitingShipmentAcrossCustomers(el, index);
   } else if(!customer && (timeRange || (fieldIntent && fieldIntent.key==='contract'))){
     renderContractListAcrossCustomers(el, index, timeRange);
   } else if(customer && !fieldIntent){
