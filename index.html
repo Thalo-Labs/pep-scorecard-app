@@ -126,6 +126,11 @@ table.leaderboard th:nth-child(2){background:#FAFAF7;z-index:3;}
 table.leaderboard tr.this-customer td:nth-child(2){background:#FFF7E8;}
 .rank{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
 .overdue{color:var(--t-warmup);font-weight:700;}
+.search-bar{margin-bottom:14px;}
+.search-bar input{width:100%;padding:14px 16px;font-size:15px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-family:'IBM Plex Sans',sans-serif;color:var(--ink);}
+.search-bar input:focus{outline:2px solid var(--eg);outline-offset:-1px;}
+.search-results{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-height:60px;}
+.search-results .field-text{margin:0;}
 .hover-tip-popup{position:fixed;z-index:9999;background:#1B2430;color:#fff;font-size:11.5px;font-family:'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:6px;max-width:320px;line-height:1.4;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25);}
 [data-hover-tip]{cursor:default;}
 .quarter-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--eg);color:#fff;letter-spacing:.03em;}
@@ -232,6 +237,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <div class="tab" data-panel="plays">Engagement plays</div>
     <div class="tab" data-panel="scorecard">Scorecard</div>
     <div class="tab active" data-panel="leaderboard">All customers</div>
+    <div class="tab" data-panel="search">Search</div>
   </div>
 
   <div class="progress" id="progress-line"></div>
@@ -241,6 +247,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   <div class="panel" id="panel-plays"></div>
   <div class="panel" id="panel-scorecard"></div>
   <div class="panel active" id="panel-leaderboard"></div>
+  <div class="panel" id="panel-search"></div>
 
   <footer>
     Each cadence task scores against its own timing rule, set the outcome from its dropdown. Grading is now percentage of that quarter's own max delivery score, since Q1 has far more scorable tasks (max 45) than Q2–Q4 (max 12, 9, 12) — a flat point threshold would've made the later quarters nearly impossible to clear on delivery alone. Bonus points from the Wins & Bonus Log split into two tiers: major wins (15+ points — expansion order, before/after win, promoter) count in full, uncapped, so a real win visibly moves the score, even past 100%. Smaller signals (touchpoints, feature ships, feedback) count up to 50% of that quarter's delivery max, so routine activity alone can't inflate a thin quarter to Champion. "Formal renewal proposal delivered" (Month 11) didn't come with a specified point value, it's defaulted to 3/0 to match the other one-time deliverables, flag if that's wrong. Data syncs to GitHub, shared by anyone with a token for this repo.
@@ -1751,6 +1758,227 @@ document.getElementById('autoscore-btn').addEventListener('click', function(){
   scheduleSave();
 });
 
+/* ===== Search tab =====
+   Lets DJ type a plain-language question ("when does Vayu's contract
+   expire") or a date-range ask ("contracts ending next month") instead of
+   clicking into each customer. Everything here is deterministic keyword
+   matching against the same per-customer data the leaderboard already
+   loads — no AI call, just pattern matching, so it works offline and
+   never guesses wrong from ambiguity (it just falls back to a plain
+   name-match list). */
+
+let SEARCH_INDEX = null;
+async function loadSearchIndex(force){
+  if(SEARCH_INDEX && !force) return SEARCH_INDEX;
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  const records = await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    return {name:name, info:(s && s.info) || {}, contracts:(s && s.info && s.info.contracts) || []};
+  }));
+  SEARCH_INDEX = records;
+  return records;
+}
+
+const SEARCH_FIELD_INTENTS = [
+  {key:'contract', test:/expir|renew|contract.*end|end.*contract|ending/},
+  {key:'install', test:/install/},
+  {key:'ship', test:/ship/},
+  {key:'sign', test:/\bsign/},
+  {key:'onboarding', test:/onboard/},
+  {key:'flag', test:/first flag|flag date/},
+  {key:'checkin', test:/check-?in/},
+  {key:'survey', test:/survey/},
+  {key:'units', test:/how many|units|sidekicks|quantity/},
+  {key:'score', test:/score|tier|standing|percent/}
+];
+function detectFieldIntent(q){
+  for(let i=0;i<SEARCH_FIELD_INTENTS.length;i++){
+    if(SEARCH_FIELD_INTENTS[i].test.test(q)) return SEARCH_FIELD_INTENTS[i];
+  }
+  return null;
+}
+
+function addDaysToStr(dateStr, days){
+  const p = dateParts(dateStr);
+  const d = new Date(Date.UTC(p.y, p.mo-1, p.d));
+  d.setUTCDate(d.getUTCDate()+days);
+  return d.toISOString().slice(0,10);
+}
+function addMonthsToStr(dateStr, months){
+  const p = dateParts(dateStr);
+  const d = new Date(Date.UTC(p.y, p.mo-1+months, p.d));
+  return d.toISOString().slice(0,10);
+}
+
+function detectTimeRange(q){
+  const today = nycTodayStr();
+  let m;
+  if(/overdue|past due|expired|lapsed/.test(q)) return {start:'0000-01-01', end:today, label:'overdue'};
+  if(m = /next\s+(\d+)\s*day/.exec(q)) return {start:today, end:addDaysToStr(today, parseInt(m[1],10)), label:'next '+m[1]+' days'};
+  if(m = /next\s+(\d+)\s*week/.exec(q)) return {start:today, end:addDaysToStr(today, parseInt(m[1],10)*7), label:'next '+m[1]+' weeks'};
+  if(m = /next\s+(\d+)\s*month/.exec(q)) return {start:today, end:addMonthsToStr(today, parseInt(m[1],10)), label:'next '+m[1]+' months'};
+  if(/next\s+month/.test(q)) return {start:today, end:addMonthsToStr(today,1), label:'next month'};
+  if(/next\s+quarter/.test(q)) return {start:today, end:addMonthsToStr(today,3), label:'next quarter'};
+  if(/next\s+week/.test(q)) return {start:today, end:addDaysToStr(today,7), label:'next week'};
+  if(/this\s+week/.test(q)) return {start:today, end:addDaysToStr(today,7), label:'this week'};
+  if(/this\s+month/.test(q)) return {start:today, end:addMonthsToStr(today,1), label:'this month'};
+  if(/this\s+quarter/.test(q)) return {start:today, end:addMonthsToStr(today,3), label:'this quarter'};
+  if(/next\s+year/.test(q)) return {start:today, end:addMonthsToStr(today,12), label:'next year'};
+  if(/this\s+year/.test(q)) return {start:today, end:addMonthsToStr(today,12), label:'this year'};
+  return null;
+}
+
+// Longest-name-wins substring match, so "KCG Air" beats a stray "KCG".
+function detectCustomer(q, names){
+  const matches = names.filter(function(n){ return n && q.indexOf(n.toLowerCase()) !== -1; });
+  if(matches.length===0) return null;
+  matches.sort(function(a,b){ return b.length - a.length; });
+  return matches[0];
+}
+
+function contractLine(c){
+  const legacyQty = (c.quantityPro===undefined && c.quantityMax===undefined) ? (parseInt(c.quantity,10)||0) : 0;
+  const qty = (parseInt(c.quantityPro,10)||0) + (parseInt(c.quantityMax,10)||0) + legacyQty;
+  const parts = [];
+  if(qty) parts.push(qty+' unit'+(qty===1?'':'s'));
+  if(c.type) parts.push(c.type);
+  return parts.join(' · ') || 'no other details';
+}
+
+function searchNameLink(name){
+  return '<span data-goto-customer="'+escAttr(name)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);font-weight:600;">'+escAttr(name)+'</span>';
+}
+
+function renderFactAnswer(el, record, intent){
+  const cs = contractSummary(record.contracts);
+  const nameLink = searchNameLink(record.name);
+  let bodyHtml = '';
+  if(intent.key === 'contract'){
+    const todayStr = nycTodayStr();
+    const sorted = record.contracts.filter(function(c){ return c.expirationDate; }).slice().sort(function(a,b){ return a.expirationDate < b.expirationDate ? -1 : 1; });
+    if(sorted.length===0){
+      bodyHtml = '<div class="field-text">'+nameLink+' has no contract end dates on file.</div>';
+    } else {
+      const headline = !cs.nextRenewal ? nameLink+' has no upcoming end date.' :
+        (isRenewalOverdue(cs.nextRenewal) ? nameLink+'\u2019s contract lapsed on <span class="overdue">'+cs.nextRenewal+'</span>.' : nameLink+'\u2019s next contract end date is <b>'+cs.nextRenewal+'</b>.');
+      const extraRows = sorted.length>1 ? sorted.map(function(c){
+        const cls = c.expirationDate < todayStr ? 'overdue' : '';
+        return '<div class="field-text" style="margin-top:4px;">\u2014 <span class="'+cls+'">'+c.expirationDate+'</span> ('+contractLine(c)+')</div>';
+      }).join('') : '';
+      bodyHtml = '<div class="field-text">'+headline+'</div>'+extraRows;
+    }
+  } else if(intent.key==='install'){
+    const dates = record.contracts.map(function(c){ return c.installDate; }).filter(Boolean);
+    bodyHtml = dates.length ? '<div class="field-text">'+nameLink+' install date'+(dates.length>1?'s':'')+': <b>'+dates.join(', ')+'</b></div>' : '<div class="field-text">'+nameLink+' has no install date on file.</div>';
+  } else if(intent.key==='ship'){
+    const dates = record.contracts.map(function(c){ return c.shippedDate; }).filter(Boolean);
+    bodyHtml = dates.length ? '<div class="field-text">'+nameLink+' shipped date'+(dates.length>1?'s':'')+': <b>'+dates.join(', ')+'</b></div>' : '<div class="field-text">'+nameLink+' has no shipped date on file.</div>';
+  } else if(intent.key==='sign'){
+    bodyHtml = cs.firstSigned ? '<div class="field-text">'+nameLink+' first signed on <b>'+cs.firstSigned+'</b>.</div>' : '<div class="field-text">'+nameLink+' has no sign date on file.</div>';
+  } else if(intent.key==='onboarding'){
+    bodyHtml = record.info.onboardingMeetingDate ? '<div class="field-text">'+nameLink+' onboarding meeting: <b>'+record.info.onboardingMeetingDate+'</b></div>' : '<div class="field-text">'+nameLink+' has no onboarding meeting date logged.</div>';
+  } else if(intent.key==='flag'){
+    bodyHtml = record.info.firstFlagDate ? '<div class="field-text">'+nameLink+' first flag: <b>'+record.info.firstFlagDate+'</b></div>' : '<div class="field-text">'+nameLink+' has no first flag date logged.</div>';
+  } else if(intent.key==='checkin'){
+    bodyHtml = record.info.checkinDate ? '<div class="field-text">'+nameLink+' check-in date: <b>'+record.info.checkinDate+'</b></div>' : '<div class="field-text">'+nameLink+' has no check-in date logged.</div>';
+  } else if(intent.key==='survey'){
+    bodyHtml = record.info.survey1SentDate ? '<div class="field-text">'+nameLink+' survey #1 sent <b>'+record.info.survey1SentDate+'</b>'+(record.info.survey1SupportScore ? ', scored <b>'+record.info.survey1SupportScore+'/5</b>' : ' (no score yet)')+'.</div>' : '<div class="field-text">'+nameLink+' has no survey #1 on file.</div>';
+  } else if(intent.key==='units'){
+    bodyHtml = '<div class="field-text">'+nameLink+' has <b>'+cs.totalSidekicks+'</b> Sidekick'+(cs.totalSidekicks===1?'':'s')+' total ('+cs.totalPro+' Pro / '+cs.totalMax+' Max) across '+cs.count+' contract'+(cs.count===1?'':'s')+'.</div>';
+  } else if(intent.key==='score'){
+    const qInfo = currentQuarterInfo(record.contracts);
+    bodyHtml = qInfo ? '<div class="field-text">'+nameLink+' is currently in '+(qInfo.special==='first30' ? 'First 30 Days' : ((qInfo.year>1 ? 'Y'+qInfo.year+' ' : '')+qInfo.q.toUpperCase()))+'. Open the Scorecard tab for the full point breakdown.</div>' : '<div class="field-text">'+nameLink+' has no onboarding date yet, so there\u2019s no current quarter to score against.</div>';
+  }
+  el.innerHTML = bodyHtml;
+}
+
+function renderContractListAcrossCustomers(el, index, timeRange){
+  const todayStr = nycTodayStr();
+  const range = timeRange || {start:todayStr, end:addDaysToStr(todayStr,30), label:'next 30 days'};
+  const matches = [];
+  index.forEach(function(r){
+    (r.contracts||[]).forEach(function(c){
+      if(!c.expirationDate) return;
+      if(c.expirationDate >= range.start && c.expirationDate <= range.end) matches.push({name:r.name, date:c.expirationDate, contract:c});
+    });
+  });
+  matches.sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+  if(matches.length===0){
+    el.innerHTML = '<div class="field-text">No contracts ending in the '+range.label+'.</div>';
+    return;
+  }
+  let html = '<div class="field-text" style="margin-bottom:8px;color:var(--ink-soft);">'+matches.length+' contract'+(matches.length===1?'':'s')+' ending in the '+range.label+':</div>';
+  html += matches.map(function(m){
+    const cls = m.date < todayStr ? 'overdue' : '';
+    return '<div class="field-text" style="margin-top:6px;">\u2014 <span class="'+cls+'">'+m.date+'</span> \u2014 '+searchNameLink(m.name)+' ('+contractLine(m.contract)+')</div>';
+  }).join('');
+  el.innerHTML = html;
+}
+
+function renderCustomerOverview(el, record){
+  const cs = contractSummary(record.contracts);
+  const cls = isRenewalOverdue(cs.nextRenewal) ? 'overdue' : '';
+  el.innerHTML = '<div class="field-text" style="line-height:1.9;">'+searchNameLink(record.name)+' \u2014 '+cs.totalSidekicks+' Sidekicks, first signed '+(cs.firstSigned||'\u2014')+', next contract end date <span class="'+cls+'">'+(cs.nextRenewal||'\u2014')+'</span>.<br>'+
+    'Ask a follow-up like "when does '+escAttr(record.name)+' install" or "'+escAttr(record.name)+' survey score" for a specific detail.</div>';
+}
+
+function renderPlainMatches(el, index, q){
+  const matches = index.filter(function(r){ return r.name && r.name.toLowerCase().indexOf(q) !== -1; });
+  if(matches.length===0){
+    el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">No customer matches "'+escAttr(q)+'". Try a customer name, or a question like "contracts ending next month".</div>';
+    return;
+  }
+  el.innerHTML = matches.map(function(r){
+    return '<div class="field-text" style="margin-top:6px;">'+searchNameLink(r.name)+'</div>';
+  }).join('');
+}
+
+async function runSearch(rawQuery){
+  const el = document.getElementById('search-results');
+  if(!el) return;
+  const q = (rawQuery||'').toLowerCase().trim();
+  if(!q){
+    el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Try: "when does Vayu\u2019s contract expire", "contracts ending next month", "overdue renewals", or just a customer name.</div>';
+    return;
+  }
+  const index = await loadSearchIndex();
+  const names = index.map(function(r){ return r.name; });
+  const customer = detectCustomer(q, names);
+  const fieldIntent = detectFieldIntent(q);
+  const timeRange = detectTimeRange(q);
+
+  if(customer && fieldIntent){
+    renderFactAnswer(el, index.find(function(r){ return r.name===customer; }), fieldIntent);
+  } else if(!customer && (timeRange || (fieldIntent && fieldIntent.key==='contract'))){
+    renderContractListAcrossCustomers(el, index, timeRange);
+  } else if(customer && !fieldIntent){
+    renderCustomerOverview(el, index.find(function(r){ return r.name===customer; }));
+  } else {
+    renderPlainMatches(el, index, q);
+  }
+}
+
+let searchPanelBuilt = false;
+function renderSearchPanel(){
+  const el = document.getElementById('panel-search');
+  if(!searchPanelBuilt){
+    el.innerHTML = '<div class="search-bar"><input type="text" id="search-input" placeholder="e.g. when does Vayu contract expire, or contracts ending next month"></div><div id="search-results" class="search-results"></div>';
+    searchPanelBuilt = true;
+    const input = document.getElementById('search-input');
+    let debounceTimer = null;
+    input.addEventListener('input', function(){
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function(){ runSearch(input.value); }, 150);
+    });
+    input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ clearTimeout(debounceTimer); runSearch(input.value); }
+    });
+  }
+  loadSearchIndex(true);
+  runSearch(document.getElementById('search-input').value);
+}
+
 document.querySelectorAll('.tab').forEach(function(tab){
   tab.addEventListener('click', async function(){
     document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
@@ -1762,6 +1990,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='scorecard') renderScorecard();
     if(tab.dataset.panel==='milestones') renderMilestones();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
+    if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
   });
 });
