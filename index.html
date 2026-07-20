@@ -240,6 +240,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <div class="tab" data-panel="milestones">Bonus log</div>
     <div class="tab" data-panel="plays">Engagement plays</div>
     <div class="tab" data-panel="scorecard">Scorecard</div>
+    <div class="tab" data-panel="activity">Activity</div>
     <div class="tab active" data-panel="leaderboard">All customers</div>
     <div class="tab" data-panel="search">Search</div>
   </div>
@@ -250,6 +251,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   <div class="panel" id="panel-milestones"></div>
   <div class="panel" id="panel-plays"></div>
   <div class="panel" id="panel-scorecard"></div>
+  <div class="panel" id="panel-activity"></div>
   <div class="panel active" id="panel-leaderboard"></div>
   <div class="panel" id="panel-search"></div>
 
@@ -499,6 +501,7 @@ const CUSTOMER_TYPE_COLOR = {
   'affiliate':'#C793AE',
   'buildings':'#E3C08D'
 };
+const CONTRACT_TYPE_LABEL = {'':'Initial', 'addition':'Addition', 'renewal':'Renewal'};
 const QUARTER_LABEL = {q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4'};
 const QUARTER_COLOR = {q1:'#2F6FED', q2:'#0F766E', q3:'#EA580C', q4:'#DB2777'};
 
@@ -646,6 +649,7 @@ const MILESTONES = [
   {id:'ms-feature', trigger:'Relevant new feature ships', action:'Send a proactive feature announcement', owners:['dj'], play:'New Feature Announcement', points:5, cap:'No cap'},
   {id:'ms-feature-use', trigger:'Customer uses a new feature', action:'Adoption signal, note which feature', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'},
   {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:5, cap:'No cap'},
+  {id:'ms-meeting', trigger:'Meeting (not one of the set cadence meetings)', action:'Note who was on it and what was discussed', owners:['dj','eg'], play:'', points:5, cap:'No cap, log each one'},
   {id:'ms-other', trigger:'Other', action:'Use the details field to say what it was', owners:['dj'], play:'', points:5, cap:'No cap'}
 ];
 
@@ -884,6 +888,115 @@ function renderMilestones(){
       const q = parts[0], idx = parseInt(parts[1], 10);
       state.bonusLog[q].splice(idx, 1);
       scheduleSave();
+      renderMilestones();
+      renderCadence();
+      updateProgress();
+    });
+  });
+}
+
+// Pulls every dated thing this customer has on file — the fixed-cadence
+// meeting dates, every contract's dates, and everything logged in the
+// Bonus log — into one chronological timeline. The "log a meeting" form
+// here writes into the same bonusLog under ms-meeting, so it shows up in
+// the Bonus log tab too; this tab doesn't keep its own separate storage.
+function renderActivity(){
+  const el = document.getElementById('panel-activity');
+  if(!currentCustomer){
+    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">Pick or add a customer above to see its activity timeline.</div></div></div>';
+    return;
+  }
+
+  const entries = [];
+  function addEntry(date, label, detail){
+    if(!date) return;
+    entries.push({date:date, label:label, detail:detail||''});
+  }
+
+  addEntry(state.info.onboardingMeetingDate, 'Onboarding meeting');
+  addEntry(state.info.firstFlagDate, 'First flag');
+  addEntry(state.info.checkinDate, 'Post-install check-in meeting');
+  addEntry(state.info.survey1SentDate, 'Survey #1 sent', state.info.survey1SupportScore ? 'Supported by Thalo: '+state.info.survey1SupportScore+'/5' : '');
+
+  const contracts = state.info.contracts || [];
+  contracts.forEach(function(c, i){
+    const n = contracts.length > 1 ? ' '+(i+1) : '';
+    addEntry(c.signDate, 'Contract'+n+' signed');
+    addEntry(c.shippedDate, 'Contract'+n+' shipped');
+    addEntry(c.installDate, 'Contract'+n+' installed');
+    addEntry(c.expectedDelivery, 'Contract'+n+' — expected delivery');
+    addEntry(c.actualDelivery, 'Contract'+n+' — actual delivery');
+    addEntry(c.expirationDate, 'Contract'+n+' expires');
+  });
+
+  Object.keys(state.bonusLog).forEach(function(q){
+    (state.bonusLog[q] || []).forEach(function(entry, idx){
+      if(!entry.date) return;
+      const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
+      entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, tag:'Bonus log', removeKey:q+':'+idx});
+    });
+  });
+
+  entries.sort(function(a,b){ return a.date.localeCompare(b.date); });
+
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings.</div>';
+
+  html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
+    '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
+      '<div class="info-field" style="max-width:150px;"><label>Date it happened</label><input type="date" id="activity-meeting-date-input" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:260px;flex:1;"><label>What was discussed</label><input type="text" id="activity-meeting-notes-input" placeholder="who, what, why" '+(isViewerMode()?'disabled':'')+'></div>'+
+    '</div>'+
+    '<div class="bonus-add"><button id="activity-meeting-add-btn" '+(isViewerMode()?'disabled':'')+'>+ Log meeting</button></div>'+
+  '</div>';
+
+  html += '<div class="log-list" style="margin-top:14px;">';
+  if(!entries.length){
+    html += '<div class="field-text" style="color:var(--ink-soft);">Nothing dated yet.</div>';
+  } else {
+    entries.forEach(function(e){
+      html += '<div class="log-item"><span>'+escAttr(e.date)+' — '+escAttr(e.label)+
+        (e.points ? ' — <b>+'+e.points+' pts</b>' : '')+
+        (e.tag ? ' <span class="tag-flex">'+escAttr(e.tag)+'</span>' : '')+
+        (e.detail ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(e.detail)+'</span>' : '')+
+        '</span>'+
+        (e.removeKey ? '<button data-remove-log="'+e.removeKey+'" '+(isViewerMode()?'disabled':'')+'>Remove</button>' : '')+
+      '</div>';
+    });
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  const addBtn = document.getElementById('activity-meeting-add-btn');
+  if(addBtn) addBtn.addEventListener('click', function(){
+    if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+    const dateInput = document.getElementById('activity-meeting-date-input');
+    const notesInput = document.getElementById('activity-meeting-notes-input');
+    const dateVal = dateInput.value;
+    if(!dateVal){ flashSaveStatus('pick the date this happened'); return; }
+    if(!notesInput.value.trim()){ flashSaveStatus('add a detail so this meeting means something later'); return; }
+    const cs = contractSummary(state.info.contracts);
+    const month = monthNumberForDate(dateVal, cs.firstSigned);
+    if(month === null){ flashSaveStatus('set a contract sign date first'); return; }
+    const ms = MILESTONES.find(function(m){ return m.id==='ms-meeting'; });
+    const q = quarterForMonth(month);
+    const year = yearForMonth(month);
+    state.bonusLog[q].push({msId:'ms-meeting', points:ms.points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
+    scheduleSave();
+    dateInput.value = '';
+    notesInput.value = '';
+    renderActivity();
+    renderMilestones();
+    renderCadence();
+    updateProgress();
+  });
+  el.querySelectorAll('[data-remove-log]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const parts = btn.dataset.removeLog.split(':');
+      const q = parts[0], idx = parseInt(parts[1], 10);
+      state.bonusLog[q].splice(idx, 1);
+      scheduleSave();
+      renderActivity();
       renderMilestones();
       renderCadence();
       updateProgress();
@@ -1351,6 +1464,14 @@ function currentQSortValue(info){
 
 // Sort accessors only — row HTML rendering is untouched below. Order here
 // matches the header/row order exactly (excluding the plain "#" column).
+// One customer can have several contracts, each with its own type (initial,
+// addition/expansion, renewal) — the leaderboard shows one row per customer,
+// so this joins every contract's type into a single comma-separated cell in
+// contract order, rather than picking just one and losing the rest.
+function contractTypesLabel(contracts){
+  return (contracts||[]).map(function(c){ return CONTRACT_TYPE_LABEL[c.type||''] || c.type; }).join(', ') || '—';
+}
+
 const LEADERBOARD_COLUMNS = [
   {key:'name', label:'Customer', get:function(r){ return (r.name||'').toLowerCase(); }},
   {key:'type', label:'Type', get:function(r){ return (CUSTOMER_TYPE_LABEL[r.info.customerType]||'').toLowerCase(); }},
@@ -1358,6 +1479,7 @@ const LEADERBOARD_COLUMNS = [
   {key:'currentQ', label:'Current Q', get:function(r){ return currentQSortValue(r.currentQInfo); }},
   {key:'sidekicks', label:'Total Sidekicks', get:function(r){ return r.cs.totalSidekicks||0; }},
   {key:'contracts', label:'# Contracts', get:function(r){ return r.cs.count||0; }},
+  {key:'contractType', label:'Contract type', get:function(r){ return r.contractTypesLabel.toLowerCase(); }},
   {key:'firstSigned', label:'First signed', get:function(r){ return r.cs.firstSigned||''; }},
   {key:'firstShipped', label:'First shipped', get:function(r){ return r.c0.shippedDate||''; }},
   {key:'firstInstall', label:'First install', get:function(r){ return r.c0.installDate||''; }},
@@ -1414,7 +1536,8 @@ async function renderLeaderboard(){
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const activeContract = hasActiveContract(s.info.contracts);
     const awaitingShipment = hasAwaitingShipment(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment};
+    const contractTypesLabelStr = contractTypesLabel(s.info.contracts);
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, contractTypesLabel:contractTypesLabelStr};
   }));
 
   const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
@@ -1444,6 +1567,7 @@ async function renderLeaderboard(){
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
+      '<td class="num">'+escAttr(r.contractTypesLabel)+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
@@ -1482,7 +1606,7 @@ function flashSaveStatus(msg){
 function updateProgress(){
   const active = document.querySelector('.tab.active').dataset.panel;
   const line = document.getElementById('progress-line');
-  if(active==='scorecard' || active==='milestones'){
+  if(active==='scorecard' || active==='milestones' || active==='activity'){
     line.innerHTML = currentCustomer ? 'Working on <b>'+escAttr(currentCustomer)+'</b>' : 'Pick a customer to start scoring';
   } else if(active==='cadence'){
     const totalItems = CADENCE.reduce(function(n,g){return n+g.items.filter(function(i){return i.scoring;}).length;},0);
@@ -1582,6 +1706,7 @@ function renderAll(){
   renderMilestones();
   renderPlays();
   renderScorecard();
+  renderActivity();
   updateProgress();
 }
 
@@ -1704,7 +1829,9 @@ document.getElementById('customer-select').addEventListener('change', async func
 function afterDateEdit(){
   const changed = runAutoscore();
   renderCadence();
-  if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+  const activePanel = document.querySelector('.tab.active').dataset.panel;
+  if(activePanel === 'scorecard') renderScorecard();
+  if(activePanel === 'activity') renderActivity();
   if(changed) flashSaveStatus('autoscored '+changed+' task'+(changed===1?'':'s'));
   scheduleSave();
 }
@@ -1736,6 +1863,7 @@ document.getElementById('info-survey1-score').addEventListener('change', functio
   const active = document.querySelector('.tab.active').dataset.panel;
   if(active === 'scorecard') renderScorecard();
   if(active === 'milestones') renderMilestones();
+  if(active === 'activity') renderActivity();
 });
 
 document.getElementById('contracts-list').addEventListener('change', function(e){
@@ -1745,7 +1873,11 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   const field = e.target.dataset.field;
   state.info.contracts[idx][field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
   if(field==='quantityPro' || field==='quantityMax' || field==='partiallyShipped'){ scheduleSave(); return; }
-  if(field==='expectedDelivery' || field==='actualDelivery' || field==='contractDocType'){ scheduleSave(); return; }
+  if(field==='expectedDelivery' || field==='actualDelivery' || field==='contractDocType'){
+    if(document.querySelector('.tab.active').dataset.panel === 'activity') renderActivity();
+    scheduleSave();
+    return;
+  }
   if(field==='shippingId' || field==='contractUrl'){ renderContracts(); scheduleSave(); return; }
   if(field==='type' || field==='renewsContractId'){
     if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
@@ -1767,13 +1899,16 @@ document.getElementById('contracts-list').addEventListener('click', function(e){
   runAutoscore();
   renderContracts();
   renderCadence();
-  if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+  const activePanel = document.querySelector('.tab.active').dataset.panel;
+  if(activePanel === 'scorecard') renderScorecard();
+  if(activePanel === 'activity') renderActivity();
   scheduleSave();
 });
 document.getElementById('add-contract-btn').addEventListener('click', function(){
   if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
   state.info.contracts.push(emptyContract());
   renderContracts();
+  if(document.querySelector('.tab.active').dataset.panel === 'activity') renderActivity();
   scheduleSave();
 });
 document.getElementById('autoscore-btn').addEventListener('click', function(){
@@ -2038,6 +2173,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='cadence') renderCadence();
     if(tab.dataset.panel==='scorecard') renderScorecard();
     if(tab.dataset.panel==='milestones') renderMilestones();
+    if(tab.dataset.panel==='activity') renderActivity();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
     if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
