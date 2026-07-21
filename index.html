@@ -1469,8 +1469,10 @@ function currentQSortValue(info){
 // overarching Terms of Service — the leaderboard shows one row per
 // customer, so this surfaces just that flagged contract's doc type
 // instead of every contract's, which would be ambiguous.
-function overarchingDocTypeLabel(contracts){
-  const tosContract = (contracts||[]).find(function(c){ return c.isOverarchingTos; });
+function overarchingTosContract(contracts){
+  return (contracts||[]).find(function(c){ return c.isOverarchingTos; }) || null;
+}
+function overarchingDocTypeLabel(tosContract){
   if(!tosContract) return '—';
   return CONTRACT_DOC_TYPE_LABEL[tosContract.contractDocType||''] || tosContract.contractDocType;
 }
@@ -1539,8 +1541,9 @@ async function renderLeaderboard(){
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const activeContract = hasActiveContract(s.info.contracts);
     const awaitingShipment = hasAwaitingShipment(s.info.contracts);
-    const overarchingDocTypeLabelStr = overarchingDocTypeLabel(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr};
+    const tosContract = overarchingTosContract(s.info.contracts);
+    const overarchingDocTypeLabelStr = overarchingDocTypeLabel(tosContract);
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr, tosContractUrl:(tosContract&&tosContract.contractUrl)||''};
   }));
 
   const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
@@ -1570,7 +1573,7 @@ async function renderLeaderboard(){
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
-      '<td class="num">'+escAttr(r.overarchingDocTypeLabel)+'</td>'+
+      '<td class="num">'+(r.tosContractUrl ? '<a href="'+escAttr(r.tosContractUrl)+'" target="_blank" rel="noopener">'+escAttr(r.overarchingDocTypeLabel)+'</a>' : escAttr(r.overarchingDocTypeLabel))+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
