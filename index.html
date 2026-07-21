@@ -698,7 +698,7 @@ function genContractId(){
   return 'c-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 }
 function emptyContract(){
-  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:''};
+  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
 }
 function defaultCustomerState(){
   return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
@@ -1465,11 +1465,14 @@ function currentQSortValue(info){
 // Sort accessors only — row HTML rendering is untouched below. Order here
 // matches the header/row order exactly (excluding the plain "#" column).
 // One customer can have several contracts, each with its own doc type
-// (Checkoutpage, MSA, Other) — the leaderboard shows one row per customer,
-// so this joins every contract's doc type into a single comma-separated cell
-// in contract order, rather than picking just one and losing the rest.
-function contractDocTypesLabel(contracts){
-  return (contracts||[]).map(function(c){ return CONTRACT_DOC_TYPE_LABEL[c.contractDocType||''] || c.contractDocType; }).join(', ') || '—';
+// (Checkoutpage, MSA, Other), but only one is ever flagged as the
+// overarching Terms of Service — the leaderboard shows one row per
+// customer, so this surfaces just that flagged contract's doc type
+// instead of every contract's, which would be ambiguous.
+function overarchingDocTypeLabel(contracts){
+  const tosContract = (contracts||[]).find(function(c){ return c.isOverarchingTos; });
+  if(!tosContract) return '—';
+  return CONTRACT_DOC_TYPE_LABEL[tosContract.contractDocType||''] || tosContract.contractDocType;
 }
 
 const LEADERBOARD_COLUMNS = [
@@ -1479,7 +1482,7 @@ const LEADERBOARD_COLUMNS = [
   {key:'currentQ', label:'Current Q', get:function(r){ return currentQSortValue(r.currentQInfo); }},
   {key:'sidekicks', label:'Total Sidekicks', get:function(r){ return r.cs.totalSidekicks||0; }},
   {key:'contracts', label:'# Contracts', get:function(r){ return r.cs.count||0; }},
-  {key:'contractDocType', label:'Contract doc type', get:function(r){ return r.contractDocTypesLabel.toLowerCase(); }},
+  {key:'contractDocType', label:'ToS doc type', get:function(r){ return r.overarchingDocTypeLabel.toLowerCase(); }},
   {key:'firstSigned', label:'First signed', get:function(r){ return r.cs.firstSigned||''; }},
   {key:'firstShipped', label:'First shipped', get:function(r){ return r.c0.shippedDate||''; }},
   {key:'firstInstall', label:'First install', get:function(r){ return r.c0.installDate||''; }},
@@ -1536,8 +1539,8 @@ async function renderLeaderboard(){
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const activeContract = hasActiveContract(s.info.contracts);
     const awaitingShipment = hasAwaitingShipment(s.info.contracts);
-    const contractDocTypesLabelStr = contractDocTypesLabel(s.info.contracts);
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, contractDocTypesLabel:contractDocTypesLabelStr};
+    const overarchingDocTypeLabelStr = overarchingDocTypeLabel(s.info.contracts);
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr};
   }));
 
   const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
@@ -1567,7 +1570,7 @@ async function renderLeaderboard(){
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
-      '<td class="num">'+escAttr(r.contractDocTypesLabel)+'</td>'+
+      '<td class="num">'+escAttr(r.overarchingDocTypeLabel)+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
@@ -1695,6 +1698,7 @@ function renderContracts(){
         '<div class="info-field wide"><label>Contract link</label><input type="text" data-contract-index="'+i+'" data-field="contractUrl" value="'+escAttr(c.contractUrl)+'" placeholder="https://..." '+disabledAttr+'></div>'+
         (c.contractUrl ? '<a class="track-link" href="'+escAttr(c.contractUrl)+'" target="_blank" rel="noopener">Open contract →</a>' : '')+
       '</div>'+
+      '<div class="renewal-line"><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-family:\'IBM Plex Sans\',sans-serif;font-size:12.5px;color:var(--ink);letter-spacing:normal;"><input type="checkbox" data-contract-index="'+i+'" data-field="isOverarchingTos" '+(c.isOverarchingTos?'checked':'')+' '+disabledAttr+' style="width:auto;"> This contract\'s doc is the overarching Terms of Service — only one per customer, checking this unchecks any other</label></div>'+
       '</div>';
   });
   el.innerHTML = html;
@@ -1757,6 +1761,7 @@ async function loadCustomerState(name){
       if(c.actualDelivery === undefined) c.actualDelivery = '';
       if(c.contractUrl === undefined) c.contractUrl = '';
       if(c.contractDocType === undefined) c.contractDocType = '';
+      if(c.isOverarchingTos === undefined) c.isOverarchingTos = false;
     });
     if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
     // Backfill year onto bonus log entries logged before the tenure-year
@@ -1879,6 +1884,17 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
     return;
   }
   if(field==='shippingId' || field==='contractUrl'){ renderContracts(); scheduleSave(); return; }
+  if(field==='isOverarchingTos'){
+    // Only one contract per customer can carry the overarching ToS flag —
+    // checking one unchecks any other, so the All Customers table always
+    // has at most a single doc type to show, never an ambiguous set.
+    if(e.target.checked){
+      state.info.contracts.forEach(function(c, ci){ if(ci !== idx) c.isOverarchingTos = false; });
+    }
+    renderContracts();
+    scheduleSave();
+    return;
+  }
   if(field==='type' || field==='renewsContractId'){
     if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
     renderContracts();
