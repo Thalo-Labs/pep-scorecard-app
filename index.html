@@ -1612,7 +1612,7 @@ function tasksForCustomer(name, s){
         // its 2-week-from-signing autoscore threshold, rather than the
         // generic 7-day guess this used to run on.
         if(!arrivalNudgeSupersedesTraining){
-          push('install_training_meeting', 'Onboarding meeting — schedule', addDaysStr(c.signDate, 14), 'nudge',
+          push('install_training_meeting', 'Onboarding Meeting / Installation Training — schedule', addDaysStr(c.signDate, 14), 'nudge',
             {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
         }
       } else {
