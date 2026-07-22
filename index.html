@@ -289,16 +289,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
       </select>
     </div>
     <div class="info-field"><label>Dashboard first-action date <span style="font-weight:400;text-transform:none;">(not instrumented yet)</span></label><input type="date" id="info-dashboard-action-date"></div>
-    <div class="info-field"><label>Support score — Summer 2026 Copilot survey (1–5)</label>
-      <select id="info-deployment-support-score">
-        <option value="">— not answered —</option>
-        <option value="1">1 — Not supported</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5 — Very supported</option>
-      </select>
-    </div>
+    <div class="info-summary" style="margin:0;">Customer support score metric uses the Survey #1 "supported by Thalo" score above, dated by its sent date.</div>
   </div>
 
   <div class="contracts-panel">
@@ -798,7 +789,7 @@ function emptyContract(){
   return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', evalOrPilotStatus:'n/a', dashboardFirstActionDate:'', deploymentSupportScore:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', evalOrPilotStatus:'n/a', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -2171,7 +2162,7 @@ const DH_METRIC_DEFS = [
   {section:'Health over Time'},
   {key:'conv', label:'Eval package / pilot conversion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
   {key:'exp', label:'Expansion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
-  {key:'supp', label:'Customer support score', target:4, direction:'higher', suffix:'/5', note:'target 4+/5 · Summer 2026 Copilot survey', status:'pull'}
+  {key:'supp', label:'Customer support score', target:4, direction:'higher', suffix:'/5', note:'target 4+/5 · from Survey #1 "supported by Thalo" score, by date answered', status:'live'}
 ];
 
 const DH_STATUS_META = {
@@ -2220,11 +2211,16 @@ function dhCustomerRecord(name, info){
     dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
     evalStatus: info.evalOrPilotStatus || 'n/a',
     expansionCount: dhExpansionCount(contracts),
-    supportScore: info.deploymentSupportScore ? parseInt(info.deploymentSupportScore, 10) : null
+    // Sourced from the existing Survey #1 "supported by Thalo" score, dated
+    // by when that survey was actually sent/answered — not the contract's
+    // sign date — so a customer's support score lands in whichever year they
+    // answered, regardless of when they originally signed.
+    supportScore: info.survey1SupportScore ? parseInt(info.survey1SupportScore, 10) : null,
+    supportYear: info.survey1SentDate ? parseInt(info.survey1SentDate.slice(0,4), 10) : null
   };
 }
 
-function dhAggregateGroup(records){
+function dhAggregateGroup(records, supportRecords){
   const evalStarted = records.filter(function(r){ return r.evalStatus==='evaluation' || r.evalStatus==='converted'; });
   const converted = records.filter(function(r){ return r.evalStatus==='converted'; });
   const withExpansion = records.filter(function(r){ return r.expansionCount>0; });
@@ -2234,7 +2230,7 @@ function dhAggregateGroup(records){
     dash: dhAvg(records.map(function(r){return r.dashDays;})),
     conv: dhPercent(converted.length, evalStarted.length),
     exp: dhPercent(withExpansion.length, records.length),
-    supp: dhAvg(records.map(function(r){return r.supportScore;}))
+    supp: dhAvg((supportRecords || records).map(function(r){return r.supportScore;}))
   };
 }
 
@@ -2297,15 +2293,22 @@ async function dhComputeLiveData(yearFilter){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     return dhCustomerRecord(name, s.info || {});
   }));
-  // YTD scopes to customers whose original contract was signed this calendar
-  // year — there's no per-metric date on eval/expansion/support-score, so this
-  // is a customer-cohort filter, not a per-event one. Customers with no sign
-  // date on file are excluded from any year-filtered view (can't confirm cohort).
+  // YTD scopes most metrics to customers whose original contract was signed
+  // this calendar year — there's no per-metric date on eval/expansion, so
+  // that's a customer-cohort filter, not a per-event one. Customers with no
+  // sign date on file are excluded from any year-filtered view (can't confirm
+  // cohort). Support score scopes independently by survey-sent date instead,
+  // since when someone answered the survey has nothing to do with when they
+  // signed — a customer signed years ago who just answered this year should
+  // still count toward this year's support score.
   const scoped = yearFilter ? records.filter(function(r){ return r.signYear === yearFilter; }) : records;
+  const supportScoped = yearFilter ? records.filter(function(r){ return r.supportYear === yearFilter; }) : records;
   const icpRecords = scoped.filter(function(r){ return r.isIcp; });
   const otherRecords = scoped.filter(function(r){ return !r.isIcp; });
-  const icpAgg = dhAggregateGroup(icpRecords);
-  const otherAgg = dhAggregateGroup(otherRecords);
+  const icpSupport = supportScoped.filter(function(r){ return r.isIcp; });
+  const otherSupport = supportScoped.filter(function(r){ return !r.isIcp; });
+  const icpAgg = dhAggregateGroup(icpRecords, icpSupport);
+  const otherAgg = dhAggregateGroup(otherRecords, otherSupport);
   const data = {_icpCount: icpRecords.length, _otherCount: otherRecords.length};
   DH_METRIC_DEFS.filter(function(d){return d.key;}).forEach(function(d){
     data[d.key+'_icp'] = icpAgg[d.key];
@@ -2418,7 +2421,7 @@ async function renderDeploymentHealth(){
     'Percent metrics without a defined target (conversion, expansion) score as the raw percentage. "Days to first dashboard action" is excluded '+
     'from both scores until usage tracking ships.<br><br>'+
     '<strong>ICP mapping:</strong> '+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(' + ')+' roll up into ICP. Every other segment rolls up into Others.<br><br>'+
-    '<strong>'+ytdLabel+':</strong> scoped to customers whose original contract was signed in '+ytdYear+' so far — customers with no sign date on file aren\'t counted in either YTD card.<br><br>'+
+    '<strong>'+ytdLabel+':</strong> most metrics scope to customers whose original contract was signed in '+ytdYear+' so far — customers with no sign date on file aren\'t counted. Customer support score scopes independently, by the year Survey #1 was actually sent/answered, since that can differ from when the customer signed.<br><br>'+
     '<strong>Status tags:</strong> <span class="dh-status-tag dh-status-live">LIVE</span> = calculable now from data already tracked here · '+
     '<span class="dh-status-tag dh-status-pull">DATA PULL</span> = calculable, but the field needs a manual pull from another source (survey responses, alert log) · '+
     '<span class="dh-status-tag dh-status-eng">NEEDS ENG</span> = not yet instrumented.';
@@ -2472,9 +2475,8 @@ function renderCustomerInfo(){
   document.getElementById('info-survey1-score').value = state.info.survey1SupportScore || '';
   document.getElementById('info-eval-status').value = state.info.evalOrPilotStatus || 'n/a';
   document.getElementById('info-dashboard-action-date').value = state.info.dashboardFirstActionDate || '';
-  document.getElementById('info-deployment-support-score').value = state.info.deploymentSupportScore || '';
   const disabled = !currentCustomer || isViewerMode();
-  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score','info-eval-status','info-dashboard-action-date','info-deployment-support-score'].forEach(function(id){
+  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score','info-eval-status','info-dashboard-action-date'].forEach(function(id){
     document.getElementById(id).disabled = disabled;
   });
   renderContracts();
@@ -2607,7 +2609,6 @@ async function loadCustomerState(name){
     if(SEGMENT_MIGRATION_MAP[merged.info.customerType]) merged.info.customerType = SEGMENT_MIGRATION_MAP[merged.info.customerType];
     if(merged.info.evalOrPilotStatus === undefined || merged.info.evalOrPilotStatus === '') merged.info.evalOrPilotStatus = 'n/a';
     if(merged.info.dashboardFirstActionDate === undefined) merged.info.dashboardFirstActionDate = '';
-    if(merged.info.deploymentSupportScore === undefined) merged.info.deploymentSupportScore = '';
     // Backfill year onto bonus log entries logged before the tenure-year
     // field existed — inferred from the month each entry already stored,
     // so 2025's Q1 and 2026's Q1 entries stop colliding in the same bucket.
@@ -2681,6 +2682,7 @@ function afterDateEdit(){
   const activePanel = document.querySelector('.tab.active').dataset.panel;
   if(activePanel === 'scorecard') renderScorecard();
   if(activePanel === 'activity') renderActivity();
+  if(activePanel === 'deployment-health') renderDeploymentHealth();
   if(changed) flashSaveStatus('autoscored '+changed+' task'+(changed===1?'':'s'));
   scheduleSave();
 }
@@ -2713,10 +2715,11 @@ document.getElementById('info-survey1-score').addEventListener('change', functio
   if(active === 'scorecard') renderScorecard();
   if(active === 'milestones') renderMilestones();
   if(active === 'activity') renderActivity();
+  if(active === 'deployment-health') renderDeploymentHealth();
 });
 
-['info-eval-status','info-dashboard-action-date','info-deployment-support-score'].forEach(function(id){
-  const DH_FIELD_MAP = {'info-eval-status':'evalOrPilotStatus', 'info-dashboard-action-date':'dashboardFirstActionDate', 'info-deployment-support-score':'deploymentSupportScore'};
+['info-eval-status','info-dashboard-action-date'].forEach(function(id){
+  const DH_FIELD_MAP = {'info-eval-status':'evalOrPilotStatus', 'info-dashboard-action-date':'dashboardFirstActionDate'};
   document.getElementById(id).addEventListener('change', function(e){
     if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
     state.info[DH_FIELD_MAP[id]] = e.target.value;
