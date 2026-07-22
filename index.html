@@ -97,6 +97,15 @@ button.primary{background:var(--eg);border-color:var(--eg);color:#fff;}
 .log-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
 .log-item:last-child{border-bottom:none;}
 .log-item button{padding:2px 8px;font-size:10px;}
+.no-pts-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;color:var(--ink-soft);}
+
+.ft-group{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+.ft-group-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
+.ft-group-header:hover{background:#FAFAF7;}
+.ft-group-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13.5px;}
+.ft-group-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin-top:3px;}
+.ft-group-count{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--eg);white-space:nowrap;}
+.ft-group-entries{border-top:1px solid var(--line);padding:4px 14px;}
 
 .score-hero{background:#12193B;color:#fff;border-radius:14px;padding:22px 24px;margin-bottom:18px;}
 .score-hero .eyebrow{color:#A8B3E8;}
@@ -297,10 +306,11 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   <div class="tabs">
     <div class="tab active" data-panel="leaderboard">All customers</div>
     <div class="tab" data-panel="deployment-health">Deployment Health</div>
+    <div class="tab" data-panel="feedback-trends">Feedback trends</div>
     <div class="tab" data-panel="tasks">Tasks &amp; alerts</div>
     <span class="tab-divider"></span>
     <div class="tab" data-panel="cadence">Fixed cadence</div>
-    <div class="tab" data-panel="milestones">Bonus log</div>
+    <div class="tab" data-panel="milestones">Bonus &amp; feedback log</div>
     <div class="tab" data-panel="scorecard">Scorecard</div>
     <div class="tab" data-panel="activity">Activity</div>
     <span class="tab-divider"></span>
@@ -317,6 +327,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   <div class="panel" id="panel-activity"></div>
   <div class="panel active" id="panel-leaderboard"></div>
   <div class="panel" id="panel-deployment-health"></div>
+  <div class="panel" id="panel-feedback-trends"></div>
   <div class="panel" id="panel-tasks"></div>
   <div class="panel" id="panel-search"></div>
 
@@ -729,12 +740,24 @@ const MILESTONES = [
   {id:'ms-winlogged', trigger:'Before/after win logged', action:'Flag as a case-study candidate', owners:['dj'], play:'Case Study / Public Win', points:15, cap:'No cap'},
   {id:'ms-promoter', trigger:'Survey score is a promoter', action:'Ask for a referral or reference', owners:['eg'], play:'Referral / Reference Ask', points:15, cap:'Once per survey received'},
   {id:'ms-techvolume', trigger:'A tech hits an install/repair volume threshold', action:'Individual certificate or swag', owners:['dj'], play:'Certificates & Badges', points:10, cap:'No cap, log per tech'},
-  {id:'ms-feedback', trigger:'Positive feedback from customer', action:'Log it, consider it for a testimonial or case study', owners:['dj'], play:'Case Study / Public Win', points:10, cap:'No cap'},
+  {id:'ms-feedback', trigger:'Positive feedback from customer', action:'Log it, consider it for a testimonial or case study', owners:['dj'], play:'Case Study / Public Win', points:10, cap:'No cap', icon:'📣'},
+  {id:'ms-feature-request', trigger:'Feature request from customer', action:'Log it, route to product', owners:['dj'], play:'', points:0, cap:'No cap', icon:'📣'},
+  {id:'ms-friction', trigger:'Customer friction / issue', action:'Log it, flag for follow-up if needed', owners:['dj'], play:'', points:0, cap:'No cap', icon:'🔴'},
   {id:'ms-feature', trigger:'Relevant new feature ships', action:'Send a proactive feature announcement', owners:['dj'], play:'New Feature Announcement', points:5, cap:'No cap'},
   {id:'ms-feature-use', trigger:'Customer uses a new feature', action:'Adoption signal, note which feature', owners:['dj'], play:'Adoption signal', points:5, cap:'No cap'},
   {id:'ms-event', trigger:'HVAC Tech Day or local industry event', action:'Invite techs + decision-maker', owners:['dj','eg'], play:'HVAC Tech Day', points:5, cap:'No cap'},
   {id:'ms-meeting', trigger:'Meeting (not one of the set cadence meetings)', action:'Note who was on it and what was discussed', owners:['dj','eg'], play:'', points:5, cap:'No cap, log each one'},
   {id:'ms-other', trigger:'Other', action:'Use the details field to say what it was', owners:['dj'], play:'', points:5, cap:'No cap'}
+];
+
+const FEEDBACK_CATEGORIES = [
+  'Install',
+  'Login / access',
+  'Dashboard / Copilot UI',
+  'Hardware (Sidekick/Thofu)',
+  'Reporting / exports',
+  'Onboarding',
+  'Pricing / billing'
 ];
 
 const PLAYS = [
@@ -867,7 +890,12 @@ function renderMilestones(){
     }
   }
 
-  const typeOptions = MILESTONES.map(function(m){ return '<option value="'+m.id+'">'+m.trigger+(m.id!=='ms-other'?' — +'+m.points+' pts':'')+'</option>'; }).join('');
+  const FEEDBACK_TYPES = ['ms-feedback','ms-feature-request','ms-friction'];
+  const typeOptions = MILESTONES.map(function(m){
+    const suffix = m.id==='ms-other' ? '' : (m.points>0 ? ' — +'+m.points+' pts' : ' — no pts');
+    return '<option value="'+m.id+'">'+m.trigger+suffix+'</option>';
+  }).join('');
+  const categoryOptions = FEEDBACK_CATEGORIES.map(function(c){ return '<option value="'+escAttr(c)+'">'+escAttr(c)+'</option>'; }).join('');
 
   const firstSigned = contractSummary(state.info.contracts).firstSigned;
 
@@ -879,6 +907,12 @@ function renderMilestones(){
         typeOptions+
       '</select></div>'+
       '<div class="info-field" style="max-width:90px;display:none;" id="win-points-wrap"><label>Points</label><input type="number" min="0" max="50" id="win-points-input" value="5" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:200px;flex:1;display:none;" id="win-category-wrap"><label>Category</label><select id="win-category-select" '+(isViewerMode()?'disabled':'')+'>'+
+        '<option value="">— select a category —</option>'+
+        categoryOptions+
+        '<option value="__other__">Other — type below</option>'+
+      '</select></div>'+
+      '<div class="info-field" style="min-width:180px;flex:1;display:none;" id="win-category-other-wrap"><label>Custom category</label><input type="text" id="win-category-other-input" placeholder="name the category" '+(isViewerMode()?'disabled':'')+'></div>'+
       '<div class="info-field" style="min-width:220px;flex:1;"><label>Details'+ '<span id="win-notes-required-mark"></span>'+'</label><input type="text" id="win-notes-input" placeholder="e.g. who, what site, specifics" '+(isViewerMode()?'disabled':'')+'></div>'+
     '</div>'+
     '<div class="bonus-add"><button id="win-add-btn" '+(isViewerMode()?'disabled':'')+'>+ Add entry</button></div>'+
@@ -920,7 +954,10 @@ function renderMilestones(){
         const entry = pair.entry;
         const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
         const whenLabel = entry.date ? entry.date : (entry.month ? 'Month '+entry.month : '');
-        html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+(ms?ms.trigger:entry.msId)+' — <b>+'+entry.points+' pts</b>'+
+        const iconHtml = ms && ms.icon ? ms.icon+' ' : '';
+        const ptsHtml = entry.points>0 ? ' — <b>+'+entry.points+' pts</b>' : ' — <span class="no-pts-badge">🔕 no pts</span>';
+        const catHtml = entry.category ? ' <span class="tag-flex">'+escAttr(entry.category)+'</span>' : '';
+        html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+iconHtml+(ms?ms.trigger:entry.msId)+ptsHtml+catHtml+
           (entry.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(entry.notes)+'</span>' : '')+
           '</span><button data-remove-log="'+q+':'+pair.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
       });
@@ -936,10 +973,25 @@ function renderMilestones(){
   const typeSelect = document.getElementById('win-type-select');
   const pointsWrap = document.getElementById('win-points-wrap');
   const requiredMark = document.getElementById('win-notes-required-mark');
+  const categoryWrap = document.getElementById('win-category-wrap');
+  const categoryOtherWrap = document.getElementById('win-category-other-wrap');
+  const categorySelect = document.getElementById('win-category-select');
+  const categoryOtherInput = document.getElementById('win-category-other-input');
   typeSelect.addEventListener('change', function(){
     const isOther = typeSelect.value === 'ms-other';
     pointsWrap.style.display = isOther ? '' : 'none';
     requiredMark.textContent = isOther ? ' (required for Other)' : '';
+    const isFeedbackType = FEEDBACK_TYPES.indexOf(typeSelect.value) !== -1;
+    categoryWrap.style.display = isFeedbackType ? '' : 'none';
+    if(!isFeedbackType){
+      categorySelect.value = '';
+      categoryOtherWrap.style.display = 'none';
+      categoryOtherInput.value = '';
+    }
+  });
+  categorySelect.addEventListener('change', function(){
+    categoryOtherWrap.style.display = categorySelect.value === '__other__' ? '' : 'none';
+    if(categorySelect.value !== '__other__') categoryOtherInput.value = '';
   });
 
   const addBtn = document.getElementById('win-add-btn');
@@ -953,6 +1005,8 @@ function renderMilestones(){
     if(!dateVal){ flashSaveStatus('pick the date this happened'); return; }
     if(!msId){ flashSaveStatus('pick what kind of win or signal this was'); return; }
     if(msId === 'ms-other' && !notesInput.value.trim()){ flashSaveStatus('add a detail so "Other" means something later'); return; }
+    const isFeedbackType = FEEDBACK_TYPES.indexOf(msId) !== -1;
+    if(isFeedbackType && categorySelect.value === '__other__' && !categoryOtherInput.value.trim()){ flashSaveStatus('name the custom category, or pick one from the list'); return; }
     const cs = contractSummary(state.info.contracts);
     const month = monthNumberForDate(dateVal, cs.firstSigned);
     if(month === null){ flashSaveStatus('set a contract sign date first'); return; }
@@ -960,11 +1014,16 @@ function renderMilestones(){
     const points = msId === 'ms-other' ? (parseInt(pointsInput.value, 10) || 0) : ms.points;
     const q = quarterForMonth(month);
     const year = yearForMonth(month);
-    state.bonusLog[q].push({msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
+    const category = isFeedbackType ? (categorySelect.value === '__other__' ? categoryOtherInput.value.trim() : categorySelect.value) : '';
+    state.bonusLog[q].push({id:'fb-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), category:category, ts:Date.now()});
     scheduleSave();
     dateInput.value = '';
     typeSelect.value = '';
     notesInput.value = '';
+    categorySelect.value = '';
+    categoryOtherInput.value = '';
+    categoryWrap.style.display = 'none';
+    categoryOtherWrap.style.display = 'none';
     renderMilestones();
     renderCadence();
     updateProgress();
@@ -1020,13 +1079,13 @@ function renderActivity(){
     (state.bonusLog[q] || []).forEach(function(entry, idx){
       if(!entry.date) return;
       const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-      entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, tag:'Bonus log', removeKey:q+':'+idx});
+      entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, icon:ms&&ms.icon?ms.icon:'', category:entry.category||'', tag:'Bonus & feedback log', removeKey:q+':'+idx});
     });
   });
 
   entries.sort(function(a,b){ return a.date.localeCompare(b.date); });
 
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings.</div>';
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus & feedback log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings.</div>';
 
   html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
     '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
@@ -1041,8 +1100,10 @@ function renderActivity(){
     html += '<div class="field-text" style="color:var(--ink-soft);">Nothing dated yet.</div>';
   } else {
     entries.forEach(function(e){
-      html += '<div class="log-item"><span>'+escAttr(e.date)+' — '+escAttr(e.label)+
-        (e.points ? ' — <b>+'+e.points+' pts</b>' : '')+
+      const ptsHtml = e.points !== undefined ? (e.points>0 ? ' — <b>+'+e.points+' pts</b>' : ' — <span class="no-pts-badge">🔕 no pts</span>') : '';
+      html += '<div class="log-item"><span>'+escAttr(e.date)+' — '+(e.icon?e.icon+' ':'')+escAttr(e.label)+
+        ptsHtml+
+        (e.category ? ' <span class="tag-flex">'+escAttr(e.category)+'</span>' : '')+
         (e.tag ? ' <span class="tag-flex">'+escAttr(e.tag)+'</span>' : '')+
         (e.detail ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(e.detail)+'</span>' : '')+
         '</span>'+
@@ -1068,7 +1129,7 @@ function renderActivity(){
     const ms = MILESTONES.find(function(m){ return m.id==='ms-meeting'; });
     const q = quarterForMonth(month);
     const year = yearForMonth(month);
-    state.bonusLog[q].push({msId:'ms-meeting', points:ms.points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
+    state.bonusLog[q].push({id:'fb-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), msId:'ms-meeting', points:ms.points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), ts:Date.now()});
     scheduleSave();
     dateInput.value = '';
     notesInput.value = '';
@@ -1087,6 +1148,99 @@ function renderActivity(){
       renderMilestones();
       renderCadence();
       updateProgress();
+    });
+  });
+}
+
+// Cross-customer roll-up of feature requests and friction/issue entries from
+// every customer's Bonus & feedback log, grouped by type+category. Reuses
+// the same load-live-or-fetch pattern as Deployment Health / Search so the
+// currently-open customer's unsaved edits are reflected without a re-save.
+const FEEDBACK_TREND_TYPES = ['ms-feedback','ms-feature-request','ms-friction'];
+let ftExpanded = {};
+
+async function renderFeedbackTrends(){
+  const el = document.getElementById('panel-feedback-trends');
+  el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading feedback…</div>';
+
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  const groups = {};
+  await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    Object.keys(s.bonusLog || {}).forEach(function(q){
+      (s.bonusLog[q] || []).forEach(function(entry, idx){
+        if(FEEDBACK_TREND_TYPES.indexOf(entry.msId) === -1) return;
+        const category = (entry.category || '').trim();
+        const key = entry.msId + '||' + category;
+        if(!groups[key]) groups[key] = {key:key, msId:entry.msId, category:category, entries:[]};
+        groups[key].entries.push({customer:name, quarter:q, idx:idx, date:entry.date||'', notes:entry.notes||''});
+      });
+    });
+  }));
+
+  const groupList = Object.keys(groups).map(function(k){ return groups[k]; });
+  groupList.sort(function(a,b){ return b.entries.length - a.entries.length; });
+
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Feature requests and customer friction/issues logged in any customer\'s Bonus & feedback log, grouped by type and category, most frequent first. Click a group to see the individual entries. There\'s no inline editing here — to change an entry\'s wording, go to that customer\'s own Bonus & feedback log tab.</div>';
+
+  if(!groupList.length){
+    html += '<div class="row"><div class="row-body"><div class="field-text">Nothing logged yet — feature-request and friction/issue entries from any customer\'s Bonus & feedback log will show up here.</div></div></div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  groupList.forEach(function(g){
+    const ms = MILESTONES.find(function(m){ return m.id===g.msId; });
+    const iconHtml = ms && ms.icon ? ms.icon+' ' : '';
+    const label = ms ? ms.trigger : g.msId;
+    const categoryLabel = g.category || 'Uncategorized';
+    const customers = Array.from(new Set(g.entries.map(function(e){ return e.customer; })));
+    const isOpen = !!ftExpanded[g.key];
+    html += '<div class="ft-group">'+
+      '<div class="ft-group-header" data-ft-toggle="'+escAttr(g.key)+'">'+
+        '<div><div class="ft-group-title">'+iconHtml+escAttr(label)+' — '+escAttr(categoryLabel)+'</div>'+
+        '<div class="ft-group-meta">'+escAttr(customers.join(', '))+'</div></div>'+
+        '<div class="ft-group-count">'+g.entries.length+'</div>'+
+      '</div>';
+    if(isOpen){
+      const sortedEntries = g.entries.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+      html += '<div class="ft-group-entries">';
+      sortedEntries.forEach(function(e){
+        html += '<div class="log-item"><span>'+(e.date?escAttr(e.date)+' — ':'')+'<b>'+escAttr(e.customer)+'</b>'+
+          (e.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(e.notes)+'</span>' : '')+
+          '</span><button data-ft-remove data-ft-customer="'+escAttr(e.customer)+'" data-ft-quarter="'+escAttr(e.quarter)+'" data-ft-idx="'+e.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-ft-toggle]').forEach(function(header){
+    header.addEventListener('click', function(){
+      const key = header.dataset.ftToggle;
+      ftExpanded[key] = !ftExpanded[key];
+      renderFeedbackTrends();
+    });
+  });
+  el.querySelectorAll('[data-ft-remove]').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      const customer = btn.dataset.ftCustomer, q = btn.dataset.ftQuarter, idx = parseInt(btn.dataset.ftIdx, 10);
+      if(customer === currentCustomer){
+        state.bonusLog[q].splice(idx, 1);
+        scheduleSave();
+        renderMilestones();
+        renderActivity();
+        renderCadence();
+        updateProgress();
+      } else {
+        const s = await loadCustomerState(customer);
+        s.bonusLog[q].splice(idx, 1);
+        await saveCustomerState(customer, s);
+      }
+      renderFeedbackTrends();
     });
   });
 }
@@ -2536,6 +2690,8 @@ function updateProgress(){
     line.innerHTML = 'Every customer, ranked by current standing';
   } else if(active==='deployment-health'){
     line.innerHTML = 'ICP vs. Others, speed-to-value and health over time';
+  } else if(active==='feedback-trends'){
+    line.innerHTML = 'Feature requests and friction/issues, grouped and ranked across every customer';
   } else if(active==='tasks'){
     line.innerHTML = 'Every open task and alert, across every customer';
   } else {
@@ -3123,6 +3279,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='activity') renderActivity();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
     if(tab.dataset.panel==='deployment-health') renderDeploymentHealth();
+    if(tab.dataset.panel==='feedback-trends') renderFeedbackTrends();
     if(tab.dataset.panel==='tasks') renderTasksPanel();
     if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
