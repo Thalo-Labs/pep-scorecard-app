@@ -2402,13 +2402,13 @@ function dhBuildTable(viewData, ytdData, periodLabel, ytdLabel){
     if(!d) return null;
     return def.key==='supp' ? d[group+'Support'] : d[group];
   }
-  function fmtSpan(v, suffix, label, tip){
-    return '<span data-hover-tip="'+escAttr(label+':\n'+tip)+'">'+fmtVal(v, suffix)+'</span>';
+  function fmtSpan(v, suffix, label, tip, bold){
+    return '<span data-hover-tip="'+escAttr(label+':\n'+tip)+'"'+(bold?' style="font-weight:700;"':'')+'>'+fmtVal(v, suffix)+'</span>';
   }
   function fmtCell(v, ytdV, suffix, def, group){
     const periodTip = dhMetricTooltip(def, detailFor(viewData, def, group));
     const ytdTip = dhMetricTooltip(def, detailFor(ytdData, def, group));
-    return fmtSpan(v, suffix, periodLabel, periodTip)+' <span style="color:var(--ink-soft);">('+fmtSpan(ytdV, suffix, ytdLabel, ytdTip)+')</span>';
+    return fmtSpan(v, suffix, periodLabel, periodTip, true)+' <span style="color:var(--ink-soft);">('+fmtSpan(ytdV, suffix, ytdLabel, ytdTip, false)+')</span>';
   }
   let rows = '<tr><th>Metric</th><th title="'+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(', ')+'">ICP<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Others<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Target</th><th>ICP score</th><th>Others score</th></tr>';
   DH_METRIC_DEFS.forEach(function(def){
