@@ -2198,6 +2198,13 @@ function dhPercent(numer, denom){
   if(!denom) return null;
   return (numer/denom)*100;
 }
+function dhQuarterLabelForDate(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr+'T00:00:00Z');
+  if(isNaN(d.getTime())) return null;
+  const q = Math.floor(d.getUTCMonth()/3)+1;
+  return 'Q'+q+' '+d.getUTCFullYear();
+}
 
 function dhCustomerRecord(name, info){
   const contracts = info.contracts || [];
@@ -2206,6 +2213,7 @@ function dhCustomerRecord(name, info){
     name:name,
     isIcp: ICP_SEGMENTS.indexOf(info.customerType) !== -1,
     signYear: c0.signDate ? parseInt(c0.signDate.slice(0,4), 10) : null,
+    signQuarter: dhQuarterLabelForDate(c0.signDate),
     shipDays: dhDaysBetween(c0.signDate, c0.shippedDate),
     issueDays: dhDaysBetween(c0.installDate, info.firstFlagDate),
     dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
@@ -2213,10 +2221,11 @@ function dhCustomerRecord(name, info){
     expansionCount: dhExpansionCount(contracts),
     // Sourced from the existing Survey #1 "supported by Thalo" score, dated
     // by when that survey was actually sent/answered — not the contract's
-    // sign date — so a customer's support score lands in whichever year they
+    // sign date — so a customer's support score lands in whichever period they
     // answered, regardless of when they originally signed.
     supportScore: info.survey1SupportScore ? parseInt(info.survey1SupportScore, 10) : null,
-    supportYear: info.survey1SentDate ? parseInt(info.survey1SentDate.slice(0,4), 10) : null
+    supportYear: info.survey1SentDate ? parseInt(info.survey1SentDate.slice(0,4), 10) : null,
+    supportQuarter: dhQuarterLabelForDate(info.survey1SentDate)
   };
 }
 
@@ -2286,23 +2295,28 @@ async function dhSetLastSeenQuarter(label){
   try{ await window.storage.set(DH_LAST_SEEN_KEY, label); }catch(e){}
 }
 
-async function dhComputeLiveData(yearFilter){
+// scope = {quarter:'Q3 2026'} or {year:2026} or omitted for no filter (all-time).
+// Cohort membership is deliberately the larger/looser of the two options for
+// each period: a customer counts toward a quarter/year if their original
+// contract was SIGNED in it — shipping (or installing, etc.) doesn't also
+// have to land in the same window. Support score scopes independently by
+// when Survey #1 was actually sent/answered, since that has nothing to do
+// with sign date — a customer signed years ago who just answered this
+// quarter/year should still count toward that period's support score.
+async function dhComputeLiveData(scope){
+  scope = scope || {};
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
   const records = await Promise.all(list.map(async function(name){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     return dhCustomerRecord(name, s.info || {});
   }));
-  // YTD scopes most metrics to customers whose original contract was signed
-  // this calendar year — there's no per-metric date on eval/expansion, so
-  // that's a customer-cohort filter, not a per-event one. Customers with no
-  // sign date on file are excluded from any year-filtered view (can't confirm
-  // cohort). Support score scopes independently by survey-sent date instead,
-  // since when someone answered the survey has nothing to do with when they
-  // signed — a customer signed years ago who just answered this year should
-  // still count toward this year's support score.
-  const scoped = yearFilter ? records.filter(function(r){ return r.signYear === yearFilter; }) : records;
-  const supportScoped = yearFilter ? records.filter(function(r){ return r.supportYear === yearFilter; }) : records;
+  const scoped = scope.quarter ? records.filter(function(r){ return r.signQuarter === scope.quarter; })
+    : scope.year ? records.filter(function(r){ return r.signYear === scope.year; })
+    : records;
+  const supportScoped = scope.quarter ? records.filter(function(r){ return r.supportQuarter === scope.quarter; })
+    : scope.year ? records.filter(function(r){ return r.supportYear === scope.year; })
+    : records;
   const icpRecords = scoped.filter(function(r){ return r.isIcp; });
   const otherRecords = scoped.filter(function(r){ return !r.isIcp; });
   const icpSupport = supportScoped.filter(function(r){ return r.isIcp; });
@@ -2326,7 +2340,7 @@ async function dhEnsureQuarterFreeze(){
   const lastSeen = await dhGetLastSeenQuarter();
   if(lastSeen && lastSeen !== nowQ){
     const existing = await dhGetQuarterData(lastSeen);
-    if(!existing) await dhSaveQuarterData(lastSeen, await dhComputeLiveData());
+    if(!existing) await dhSaveQuarterData(lastSeen, await dhComputeLiveData({quarter: lastSeen}));
   }
   if(lastSeen !== nowQ) await dhSetLastSeenQuarter(nowQ);
   return nowQ;
@@ -2341,8 +2355,8 @@ function dhBuildGauges(thisData, ytdData, thisLabel, ytdLabel){
   const ytdIcp = dhGroupScoreVal(ytdData, 'icp');
   const ytdOther = dhGroupScoreVal(ytdData, 'other');
   const cards = [
-    {label:'ICP — '+thisLabel, value:thisIcp, meta:(thisData._icpCount||0)+' customers · live'},
-    {label:'Others — '+thisLabel, value:thisOther, meta:(thisData._otherCount||0)+' customers · live'},
+    {label:'ICP — '+thisLabel, value:thisIcp, meta:(thisData._icpCount||0)+' customers signed in '+thisLabel+' · live'},
+    {label:'Others — '+thisLabel, value:thisOther, meta:(thisData._otherCount||0)+' customers signed in '+thisLabel+' · live'},
     {label:'ICP — '+ytdLabel, value:ytdIcp, meta:(ytdData._icpCount||0)+' customers signed this year · live'},
     {label:'Others — '+ytdLabel, value:ytdOther, meta:(ytdData._otherCount||0)+' customers signed this year · live'}
   ];
@@ -2353,14 +2367,17 @@ function dhBuildGauges(thisData, ytdData, thisLabel, ytdLabel){
   }).join('');
 }
 
-function dhBuildTable(viewData){
+function dhBuildTable(viewData, ytdData){
   const el = document.getElementById('dh-metrics-table');
   function fmtVal(v, suffix){ return (v===null||v===undefined) ? '—' : (Math.round(v*10)/10)+suffix; }
-  let rows = '<tr><th>Metric</th><th title="'+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(', ')+'">ICP</th><th>Others</th><th>Target</th><th>ICP score</th><th>Others score</th></tr>';
+  function fmtCell(v, ytdV, suffix){ return fmtVal(v, suffix)+' <span style="color:var(--ink-soft);">('+fmtVal(ytdV, suffix)+')</span>'; }
+  let rows = '<tr><th>Metric</th><th title="'+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(', ')+'">ICP<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Others<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Target</th><th>ICP score</th><th>Others score</th></tr>';
   DH_METRIC_DEFS.forEach(function(def){
     if(def.section){ rows += '<tr class="dh-section-row"><td colspan="6">'+def.section+'</td></tr>'; return; }
     const icpVal = viewData[def.key+'_icp'];
     const otherVal = viewData[def.key+'_other'];
+    const icpYtdVal = ytdData[def.key+'_icp'];
+    const otherYtdVal = ytdData[def.key+'_other'];
     const icpScore = dhScoreMetric(def, icpVal);
     const otherScore = dhScoreMetric(def, otherVal);
     const targetDisplay = def.target ? (def.direction==='lower'?'&lt; ':'≥ ')+def.target+def.suffix : '<span style="font-style:italic;color:#aaa">TBD</span>';
@@ -2368,8 +2385,8 @@ function dhBuildTable(viewData){
     const statusTag = st ? '<span class="dh-status-tag '+st.className+'" title="'+st.title+'">'+st.label+'</span>' : '';
     rows += '<tr>'+
       '<td class="dh-metric-name">'+def.label+statusTag+'<div class="dh-metric-note">'+def.note+'</div></td>'+
-      '<td>'+fmtVal(icpVal, def.suffix)+'</td>'+
-      '<td>'+fmtVal(otherVal, def.suffix)+'</td>'+
+      '<td>'+fmtCell(icpVal, icpYtdVal, def.suffix)+'</td>'+
+      '<td>'+fmtCell(otherVal, otherYtdVal, def.suffix)+'</td>'+
       '<td>'+targetDisplay+'</td>'+
       '<td><span class="dh-score-pill" style="background:'+dhScoreClass(icpScore)+'">'+dhFmtScore(icpScore)+'</span></td>'+
       '<td><span class="dh-score-pill" style="background:'+dhScoreClass(otherScore)+'">'+dhFmtScore(otherScore)+'</span></td>'+
@@ -2386,11 +2403,10 @@ async function renderDeploymentHealth(){
   const lastQ = dhPrevQuarterLabel(thisQ);
   if(!dhViewingLabel) dhViewingLabel = thisQ;
 
-  const thisQData = await dhComputeLiveData();
-  const lastQData = await dhGetQuarterData(lastQ);
+  const thisQData = await dhComputeLiveData({quarter: thisQ});
   const ytdYear = new Date().getFullYear();
   const ytdLabel = 'YTD '+ytdYear;
-  const ytdData = await dhComputeLiveData(ytdYear);
+  const ytdData = await dhComputeLiveData({year: ytdYear});
 
   let knownQuarters = [];
   try{
@@ -2407,21 +2423,21 @@ async function renderDeploymentHealth(){
     '<div class="dh-history-bar"><label>Viewing: <select id="dh-history-select">'+
       options.map(function(q){ return '<option value="'+q+'" '+(q===dhViewingLabel?'selected':'')+'>'+q+(q===thisQ?' (current — live)':'')+'</option>'; }).join('')+
     '</select></label></div>'+
-    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live from current customer data every time this tab opens.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended.')+'</p>'+
+    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live every time this tab opens, scoped to customers signed that quarter.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended.')+'</p>'+
     '<div class="dh-gauges" id="dh-gauges"></div>'+
     '<table class="dh-metrics" id="dh-metrics-table"></table>'+
     '<div class="dh-formula" id="dh-formula-note"></div>';
 
   dhBuildGauges(thisQData, ytdData, thisQ, ytdLabel);
-  dhBuildTable(viewData);
+  dhBuildTable(viewData, ytdData);
 
   document.getElementById('dh-formula-note').innerHTML =
     'Score = average of per-metric scores (0–100). ICP and Others are scored and shown separately — never blended into one number. '+
     'Lower-is-better metrics score target÷actual×100 (capped 100). Higher-is-better metrics with a target score actual÷target×100. '+
     'Percent metrics without a defined target (conversion, expansion) score as the raw percentage. "Days to first dashboard action" is excluded '+
-    'from both scores until usage tracking ships.<br><br>'+
+    'from both scores until usage tracking ships. Table cells read as <b>this period (YTD)</b> — the YTD figure in parentheses is always the current year-to-date, live, regardless of which period is selected above.<br><br>'+
     '<strong>ICP mapping:</strong> '+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(' + ')+' roll up into ICP. Every other segment rolls up into Others.<br><br>'+
-    '<strong>'+ytdLabel+':</strong> most metrics scope to customers whose original contract was signed in '+ytdYear+' so far — customers with no sign date on file aren\'t counted. Customer support score scopes independently, by the year Survey #1 was actually sent/answered, since that can differ from when the customer signed.<br><br>'+
+    '<strong>Cohort scoping:</strong> a customer counts toward a given quarter or '+ytdLabel+' if their original contract was <i>signed</i> in that window — shipping, installing, converting, or expanding don\'t also have to land in the same window, so the cohort is as large as possible. Customers with no sign date on file aren\'t counted in any period-scoped view. Customer support score scopes independently, by the period Survey #1 was actually sent/answered, since that can differ from when the customer signed.<br><br>'+
     '<strong>Status tags:</strong> <span class="dh-status-tag dh-status-live">LIVE</span> = calculable now from data already tracked here · '+
     '<span class="dh-status-tag dh-status-pull">DATA PULL</span> = calculable, but the field needs a manual pull from another source (survey responses, alert log) · '+
     '<span class="dh-status-tag dh-status-eng">NEEDS ENG</span> = not yet instrumented.';
