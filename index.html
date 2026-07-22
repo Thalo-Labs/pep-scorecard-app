@@ -817,6 +817,9 @@ let state = defaultCustomerState();
 let saveTimer = null;
 let selectedQuarter = 'q1';
 let selectedYear = 1;
+// {q, idx} of the bonus-log entry currently loaded into the entry form for
+// editing, or null when the form is in its normal "add a new entry" mode.
+let editingBonusLogKey = null;
 let taskFilter = 'open';
 let taskPicking = {};
 let addTaskFormOpen = false;
@@ -891,31 +894,52 @@ function renderMilestones(){
   }
 
   const FEEDBACK_TYPES = ['ms-feedback','ms-feature-request','ms-friction'];
+
+  // If the entry being edited got removed out from under us (e.g. stale
+  // index after some other change), fall back to plain add mode instead of
+  // erroring.
+  let editingEntry = null;
+  if(editingBonusLogKey){
+    const editArr = state.bonusLog[editingBonusLogKey.q] || [];
+    editingEntry = editArr[editingBonusLogKey.idx] || null;
+    if(!editingEntry) editingBonusLogKey = null;
+  }
+  const editingIsOther = editingEntry && editingEntry.msId === 'ms-other';
+  const editingIsFeedbackType = editingEntry && FEEDBACK_TYPES.indexOf(editingEntry.msId) !== -1;
+  const editingCategoryIsCustom = !!(editingEntry && editingEntry.category && FEEDBACK_CATEGORIES.indexOf(editingEntry.category) === -1);
+
   const typeOptions = MILESTONES.map(function(m){
     const suffix = m.id==='ms-other' ? '' : (m.points>0 ? ' — +'+m.points+' pts' : ' — no pts');
-    return '<option value="'+m.id+'">'+m.trigger+suffix+'</option>';
+    const selectedAttr = editingEntry && editingEntry.msId===m.id ? ' selected' : '';
+    return '<option value="'+m.id+'"'+selectedAttr+'>'+m.trigger+suffix+'</option>';
   }).join('');
-  const categoryOptions = FEEDBACK_CATEGORIES.map(function(c){ return '<option value="'+escAttr(c)+'">'+escAttr(c)+'</option>'; }).join('');
+  const categoryOptions = FEEDBACK_CATEGORIES.map(function(c){
+    const selectedAttr = editingEntry && editingEntry.category===c ? ' selected' : '';
+    return '<option value="'+escAttr(c)+'"'+selectedAttr+'>'+escAttr(c)+'</option>';
+  }).join('');
 
   const firstSigned = contractSummary(state.info.contracts).firstSigned;
 
-  html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
+  html += (editingBonusLogKey ? '<div class="cap-note" style="margin-bottom:6px;">Editing the entry below — Cancel to go back to logging a new one.</div>' : '')+
+  '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
     '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
-      '<div class="info-field" style="max-width:150px;"><label>Date it happened</label><input type="date" id="win-date-input" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="max-width:150px;"><label>Date it happened</label><input type="date" id="win-date-input" value="'+(editingEntry?escAttr(editingEntry.date||''):'')+'" '+(isViewerMode()?'disabled':'')+'></div>'+
       '<div class="info-field" style="min-width:240px;flex:1;"><label>What happened</label><select id="win-type-select" '+(isViewerMode()?'disabled':'')+'>'+
         '<option value="">— select a type —</option>'+
         typeOptions+
       '</select></div>'+
-      '<div class="info-field" style="max-width:90px;display:none;" id="win-points-wrap"><label>Points</label><input type="number" min="0" max="50" id="win-points-input" value="5" '+(isViewerMode()?'disabled':'')+'></div>'+
-      '<div class="info-field" style="min-width:200px;flex:1;display:none;" id="win-category-wrap"><label>Category</label><select id="win-category-select" '+(isViewerMode()?'disabled':'')+'>'+
+      '<div class="info-field" style="max-width:90px;'+(editingIsOther?'':'display:none;')+'" id="win-points-wrap"><label>Points</label><input type="number" min="0" max="50" id="win-points-input" value="'+(editingEntry?editingEntry.points:5)+'" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:200px;flex:1;'+(editingIsFeedbackType?'':'display:none;')+'" id="win-category-wrap"><label>Category</label><select id="win-category-select" '+(isViewerMode()?'disabled':'')+'>'+
         '<option value="">— select a category —</option>'+
         categoryOptions+
-        '<option value="__other__">Other — type below</option>'+
+        '<option value="__other__"'+(editingCategoryIsCustom?' selected':'')+'>Other — type below</option>'+
       '</select></div>'+
-      '<div class="info-field" style="min-width:180px;flex:1;display:none;" id="win-category-other-wrap"><label>Custom category</label><input type="text" id="win-category-other-input" placeholder="name the category" '+(isViewerMode()?'disabled':'')+'></div>'+
-      '<div class="info-field" style="min-width:220px;flex:1;"><label>Details'+ '<span id="win-notes-required-mark"></span>'+'</label><input type="text" id="win-notes-input" placeholder="e.g. who, what site, specifics" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:180px;flex:1;'+(editingCategoryIsCustom?'':'display:none;')+'" id="win-category-other-wrap"><label>Custom category</label><input type="text" id="win-category-other-input" value="'+(editingCategoryIsCustom?escAttr(editingEntry.category):'')+'" placeholder="name the category" '+(isViewerMode()?'disabled':'')+'></div>'+
+      '<div class="info-field" style="min-width:220px;flex:1;"><label>Details'+ '<span id="win-notes-required-mark">'+(editingIsOther?' (required for Other)':'')+'</span>'+'</label><input type="text" id="win-notes-input" value="'+(editingEntry?escAttr(editingEntry.notes||''):'')+'" placeholder="e.g. who, what site, specifics" '+(isViewerMode()?'disabled':'')+'></div>'+
     '</div>'+
-    '<div class="bonus-add"><button id="win-add-btn" '+(isViewerMode()?'disabled':'')+'>+ Add entry</button></div>'+
+    '<div class="bonus-add"><button id="win-submit-btn" '+(isViewerMode()?'disabled':'')+'>'+(editingBonusLogKey?'Save changes':'+ Add entry')+'</button>'+
+      (editingBonusLogKey ? '<button id="win-cancel-btn" type="button">Cancel</button>' : '')+
+    '</div>'+
   '</div>'+
   (firstSigned ? '' : '<div class="cap-note" style="margin-top:6px;">Set a "Sign date" on a contract above first — that\'s the anchor date entries use to figure out which month/quarter a given date falls into.</div>');
 
@@ -957,9 +981,14 @@ function renderMilestones(){
         const iconHtml = ms && ms.icon ? ms.icon+' ' : '';
         const ptsHtml = entry.points>0 ? ' — <b>+'+entry.points+' pts</b>' : ' — <span class="no-pts-badge">🔕 no pts</span>';
         const catHtml = entry.category ? ' <span class="tag-flex">'+escAttr(entry.category)+'</span>' : '';
+        const isEditingThis = !!(editingBonusLogKey && editingBonusLogKey.q===q && editingBonusLogKey.idx===pair.idx);
+        const rowActionsDisabled = isViewerMode() || !!editingBonusLogKey;
         html += '<div class="log-item"><span>'+(whenLabel?whenLabel+' — ':'')+iconHtml+(ms?ms.trigger:entry.msId)+ptsHtml+catHtml+
           (entry.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(entry.notes)+'</span>' : '')+
-          '</span><button data-remove-log="'+q+':'+pair.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
+          '</span><span style="display:flex;gap:6px;">'+
+          '<button data-edit-log="'+q+':'+pair.idx+'" '+(rowActionsDisabled?'disabled':'')+'>'+(isEditingThis?'Editing…':'Edit')+'</button>'+
+          '<button data-remove-log="'+q+':'+pair.idx+'" '+(rowActionsDisabled?'disabled':'')+'>Remove</button>'+
+          '</span></div>';
       });
       if(!anyRows){
         html += '<div class="field-text" style="color:var(--ink-soft);">Nothing logged yet.</div>';
@@ -994,8 +1023,8 @@ function renderMilestones(){
     if(categorySelect.value !== '__other__') categoryOtherInput.value = '';
   });
 
-  const addBtn = document.getElementById('win-add-btn');
-  if(addBtn) addBtn.addEventListener('click', function(){
+  const submitBtn = document.getElementById('win-submit-btn');
+  if(submitBtn) submitBtn.addEventListener('click', function(){
     if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
     const dateInput = document.getElementById('win-date-input');
     const notesInput = document.getElementById('win-notes-input');
@@ -1015,18 +1044,36 @@ function renderMilestones(){
     const q = quarterForMonth(month);
     const year = yearForMonth(month);
     const category = isFeedbackType ? (categorySelect.value === '__other__' ? categoryOtherInput.value.trim() : categorySelect.value) : '';
-    state.bonusLog[q].push({id:'fb-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), category:category, ts:Date.now()});
+    if(editingBonusLogKey){
+      // Splice the original out first (it may be moving to a different
+      // quarter if the edited date lands in a different one) and carry its
+      // id/ts forward so this stays the same entry, not a new one.
+      const origArr = state.bonusLog[editingBonusLogKey.q] || [];
+      const origEntry = origArr[editingBonusLogKey.idx];
+      origArr.splice(editingBonusLogKey.idx, 1);
+      state.bonusLog[q].push(Object.assign({}, origEntry, {msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), category:category}));
+      editingBonusLogKey = null;
+    } else {
+      state.bonusLog[q].push({id:'fb-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), msId:msId, points:points, month:month, year:year, date:dateVal, notes:notesInput.value.trim(), category:category, ts:Date.now()});
+    }
     scheduleSave();
-    dateInput.value = '';
-    typeSelect.value = '';
-    notesInput.value = '';
-    categorySelect.value = '';
-    categoryOtherInput.value = '';
-    categoryWrap.style.display = 'none';
-    categoryOtherWrap.style.display = 'none';
     renderMilestones();
     renderCadence();
     updateProgress();
+  });
+  const cancelBtn = document.getElementById('win-cancel-btn');
+  if(cancelBtn) cancelBtn.addEventListener('click', function(){
+    editingBonusLogKey = null;
+    renderMilestones();
+  });
+  el.querySelectorAll('[data-edit-log]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const parts = btn.dataset.editLog.split(':');
+      editingBonusLogKey = {q:parts[0], idx:parseInt(parts[1], 10)};
+      renderMilestones();
+      const row = document.querySelector('.bonus-row');
+      if(row) row.scrollIntoView({block:'center'});
+    });
   });
   el.querySelectorAll('[data-remove-log]').forEach(function(btn){
     btn.addEventListener('click', function(){
@@ -2892,6 +2939,7 @@ document.getElementById('add-customer').addEventListener('click', async function
 async function selectCustomerAndRender(name){
   await flushSave();
   currentCustomer = name || null;
+  editingBonusLogKey = null;
   state = currentCustomer ? await loadCustomerState(currentCustomer) : defaultCustomerState();
   if(currentCustomer) runAutoscore();
   // Default the Scorecard tab to whichever year/quarter this customer is
