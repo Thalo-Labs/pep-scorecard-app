@@ -191,10 +191,6 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
 .dh-gauge-value{font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700;line-height:1;display:flex;align-items:baseline;gap:4px;}
 .dh-gauge-value span{font-size:14px;color:#A8B3E8;font-weight:500;}
 .dh-gauge-meta{margin-top:6px;font-size:11px;color:#A8B3E8;}
-.dh-gauge-delta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:6px;}
-.dh-delta-up{color:#7cc9a0;}
-.dh-delta-down{color:#e0876f;}
-.dh-delta-flat{color:#A8B3E8;}
 .dh-history-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
 .dh-history-bar label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;}
 table.dh-metrics{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
@@ -2218,6 +2214,7 @@ function dhCustomerRecord(name, info){
   return {
     name:name,
     isIcp: ICP_SEGMENTS.indexOf(info.customerType) !== -1,
+    signYear: c0.signDate ? parseInt(c0.signDate.slice(0,4), 10) : null,
     shipDays: dhDaysBetween(c0.signDate, c0.shippedDate),
     issueDays: dhDaysBetween(c0.installDate, info.firstFlagDate),
     dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
@@ -2293,15 +2290,20 @@ async function dhSetLastSeenQuarter(label){
   try{ await window.storage.set(DH_LAST_SEEN_KEY, label); }catch(e){}
 }
 
-async function dhComputeLiveData(){
+async function dhComputeLiveData(yearFilter){
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
   const records = await Promise.all(list.map(async function(name){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     return dhCustomerRecord(name, s.info || {});
   }));
-  const icpRecords = records.filter(function(r){ return r.isIcp; });
-  const otherRecords = records.filter(function(r){ return !r.isIcp; });
+  // YTD scopes to customers whose original contract was signed this calendar
+  // year — there's no per-metric date on eval/expansion/support-score, so this
+  // is a customer-cohort filter, not a per-event one. Customers with no sign
+  // date on file are excluded from any year-filtered view (can't confirm cohort).
+  const scoped = yearFilter ? records.filter(function(r){ return r.signYear === yearFilter; }) : records;
+  const icpRecords = scoped.filter(function(r){ return r.isIcp; });
+  const otherRecords = scoped.filter(function(r){ return !r.isIcp; });
   const icpAgg = dhAggregateGroup(icpRecords);
   const otherAgg = dhAggregateGroup(otherRecords);
   const data = {_icpCount: icpRecords.length, _otherCount: otherRecords.length};
@@ -2329,28 +2331,22 @@ async function dhEnsureQuarterFreeze(){
 
 let dhViewingLabel = null;
 
-function dhBuildGauges(thisData, lastData, thisLabel, lastLabel){
+function dhBuildGauges(thisData, ytdData, thisLabel, ytdLabel){
   const el = document.getElementById('dh-gauges');
   const thisIcp = dhGroupScoreVal(thisData, 'icp');
   const thisOther = dhGroupScoreVal(thisData, 'other');
-  const lastIcp = lastData ? dhGroupScoreVal(lastData, 'icp') : null;
-  const lastOther = lastData ? dhGroupScoreVal(lastData, 'other') : null;
-  function deltaHtml(cur, prev){
-    if(cur===null || prev===null) return '';
-    const diff = cur - prev;
-    const cls = diff>0.5?'dh-delta-up':diff<-0.5?'dh-delta-down':'dh-delta-flat';
-    return '<div class="dh-gauge-delta '+cls+'">'+(diff>0?'+':'')+diff.toFixed(1)+' vs last quarter</div>';
-  }
+  const ytdIcp = dhGroupScoreVal(ytdData, 'icp');
+  const ytdOther = dhGroupScoreVal(ytdData, 'other');
   const cards = [
-    {label:'ICP — '+thisLabel, value:thisIcp, meta:(thisData._icpCount||0)+' customers · live', delta:deltaHtml(thisIcp,lastIcp)},
-    {label:'Others — '+thisLabel, value:thisOther, meta:(thisData._otherCount||0)+' customers · live', delta:deltaHtml(thisOther,lastOther)},
-    {label:'ICP — '+lastLabel, value:lastIcp, meta:lastData?'Frozen':'No data recorded', delta:''},
-    {label:'Others — '+lastLabel, value:lastOther, meta:lastData?'Frozen':'No data recorded', delta:''}
+    {label:'ICP — '+thisLabel, value:thisIcp, meta:(thisData._icpCount||0)+' customers · live'},
+    {label:'Others — '+thisLabel, value:thisOther, meta:(thisData._otherCount||0)+' customers · live'},
+    {label:'ICP — '+ytdLabel, value:ytdIcp, meta:(ytdData._icpCount||0)+' customers signed this year · live'},
+    {label:'Others — '+ytdLabel, value:ytdOther, meta:(ytdData._otherCount||0)+' customers signed this year · live'}
   ];
   el.innerHTML = cards.map(function(c){
     return '<div class="dh-gauge-card"><div class="dh-gauge-label">'+escAttr(c.label)+'</div>'+
       '<div class="dh-gauge-value">'+(c.value===null?'—':Math.round(c.value))+'<span>/100</span></div>'+
-      '<div class="dh-gauge-meta">'+c.meta+'</div>'+c.delta+'</div>';
+      '<div class="dh-gauge-meta">'+c.meta+'</div></div>';
   }).join('');
 }
 
@@ -2389,6 +2385,9 @@ async function renderDeploymentHealth(){
 
   const thisQData = await dhComputeLiveData();
   const lastQData = await dhGetQuarterData(lastQ);
+  const ytdYear = new Date().getFullYear();
+  const ytdLabel = 'YTD '+ytdYear;
+  const ytdData = await dhComputeLiveData(ytdYear);
 
   let knownQuarters = [];
   try{
@@ -2410,7 +2409,7 @@ async function renderDeploymentHealth(){
     '<table class="dh-metrics" id="dh-metrics-table"></table>'+
     '<div class="dh-formula" id="dh-formula-note"></div>';
 
-  dhBuildGauges(thisQData, lastQData, thisQ, lastQ);
+  dhBuildGauges(thisQData, ytdData, thisQ, ytdLabel);
   dhBuildTable(viewData);
 
   document.getElementById('dh-formula-note').innerHTML =
@@ -2419,6 +2418,7 @@ async function renderDeploymentHealth(){
     'Percent metrics without a defined target (conversion, expansion) score as the raw percentage. "Days to first dashboard action" is excluded '+
     'from both scores until usage tracking ships.<br><br>'+
     '<strong>ICP mapping:</strong> '+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(' + ')+' roll up into ICP. Every other segment rolls up into Others.<br><br>'+
+    '<strong>'+ytdLabel+':</strong> scoped to customers whose original contract was signed in '+ytdYear+' so far — customers with no sign date on file aren\'t counted in either YTD card.<br><br>'+
     '<strong>Status tags:</strong> <span class="dh-status-tag dh-status-live">LIVE</span> = calculable now from data already tracked here · '+
     '<span class="dh-status-tag dh-status-pull">DATA PULL</span> = calculable, but the field needs a manual pull from another source (survey responses, alert log) · '+
     '<span class="dh-status-tag dh-status-eng">NEEDS ENG</span> = not yet instrumented.';
