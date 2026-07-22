@@ -55,6 +55,7 @@ button.primary{background:var(--eg);border-color:var(--eg);color:#fff;}
 .tab{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
   padding:10px 14px;cursor:pointer;color:var(--ink-soft);border-bottom:2px solid transparent;}
 .tab.active{color:var(--ink);border-bottom-color:var(--eg);}
+.tab-divider{width:1px;align-self:stretch;background:var(--line);margin:8px 6px;}
 .progress{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 16px;}
 .progress b{color:var(--ink);}
 
@@ -294,14 +295,16 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   </div>
 
   <div class="tabs">
-    <div class="tab" data-panel="cadence">Fixed cadence</div>
-    <div class="tab" data-panel="milestones">Bonus log</div>
-    <div class="tab" data-panel="plays">Engagement plays</div>
-    <div class="tab" data-panel="scorecard">Scorecard</div>
-    <div class="tab" data-panel="activity">Activity</div>
     <div class="tab active" data-panel="leaderboard">All customers</div>
     <div class="tab" data-panel="deployment-health">Deployment Health</div>
     <div class="tab" data-panel="tasks">Tasks &amp; alerts</div>
+    <span class="tab-divider"></span>
+    <div class="tab" data-panel="cadence">Fixed cadence</div>
+    <div class="tab" data-panel="milestones">Bonus log</div>
+    <div class="tab" data-panel="scorecard">Scorecard</div>
+    <div class="tab" data-panel="activity">Activity</div>
+    <span class="tab-divider"></span>
+    <div class="tab" data-panel="plays">Engagement plays</div>
     <div class="tab" data-panel="search">Search</div>
   </div>
 
