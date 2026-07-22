@@ -281,15 +281,8 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
     <div class="info-header">
       <span class="field-label" style="margin:0;">Deployment Health inputs — feeds the Deployment Health tab</span>
     </div>
-    <div class="info-field"><label>Eval / pilot status</label>
-      <select id="info-eval-status">
-        <option value="n/a">N/A — no eval/pilot</option>
-        <option value="evaluation">Evaluation / pilot in progress</option>
-        <option value="converted">Converted</option>
-      </select>
-    </div>
     <div class="info-field"><label>Dashboard first-action date <span style="font-weight:400;text-transform:none;">(not instrumented yet)</span></label><input type="date" id="info-dashboard-action-date"></div>
-    <div class="info-summary" style="margin:0;">Customer support score metric uses the Survey #1 "supported by Thalo" score above, dated by its sent date.</div>
+    <div class="info-summary" style="margin:0;">Customer support score metric uses the Survey #1 "supported by Thalo" score above, dated by its sent date. Eval/pilot conversion is inferred from contract data: an original contract of 6 months or less counts as a pilot — "evaluation" until a later contract exists, "converted" once one does.</div>
   </div>
 
   <div class="contracts-panel">
@@ -789,7 +782,7 @@ function emptyContract(){
   return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', evalOrPilotStatus:'n/a', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -2160,7 +2153,7 @@ const DH_METRIC_DEFS = [
   {key:'issue', label:'Days to first issue detected', target:7, direction:'lower', suffix:'d', note:'install date → first flag date', status:'pull'},
   {key:'dash', label:'Days to first dashboard action', target:null, direction:'lower', suffix:'d', note:'not instrumented yet — excluded from scoring', status:'eng'},
   {section:'Health over Time'},
-  {key:'conv', label:'Eval package / pilot conversion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
+  {key:'conv', label:'Eval package / pilot conversion', target:null, direction:'higher', suffix:'%', note:'higher is better · inferred: original contract ≤6mo counts as a pilot, converted once a later contract exists', status:'live'},
   {key:'exp', label:'Expansion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
   {key:'supp', label:'Customer support score', target:4, direction:'higher', suffix:'/5', note:'target 4+/5 · from Survey #1 "supported by Thalo" score, by date answered', status:'live'}
 ];
@@ -2182,6 +2175,19 @@ function dhOriginalContract(contracts){
 }
 function dhExpansionCount(contracts){
   return (contracts||[]).filter(function(c){ return c.type === 'addition'; }).length;
+}
+// Eval/pilot conversion is inferred rather than hand-tagged, since nothing
+// was actually populating the old manual field: an original contract signed
+// for 6 months or less reads as a pilot. It's "converted" once any other
+// contract exists (addition or renewal, doesn't matter which), "evaluation"
+// if it's still the only one, and "n/a" if the original contract ran longer
+// than 6 months or has no expiration date on file to judge that from at all.
+function dhInferEvalStatus(contracts, c0){
+  if(!c0.signDate || !c0.expirationDate) return 'n/a';
+  const durationMonths = monthsBetween(c0.signDate, c0.expirationDate);
+  if(durationMonths === null || durationMonths > 6) return 'n/a';
+  const hasLaterContract = (contracts||[]).some(function(c){ return c.id !== c0.id && c.signDate; });
+  return hasLaterContract ? 'converted' : 'evaluation';
 }
 function dhDaysBetween(fromStr, toStr){
   if(!fromStr || !toStr) return null;
@@ -2219,7 +2225,7 @@ function dhCustomerRecord(name, info){
     shipDays: dhDaysBetween(c0.signDate, c0.shippedDate),
     issueDays: dhDaysBetween(c0.installDate, info.firstFlagDate),
     dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
-    evalStatus: info.evalOrPilotStatus || 'n/a',
+    evalStatus: dhInferEvalStatus(contracts, c0),
     expansionCount: dhExpansionCount(contracts),
     // Sourced from the existing Survey #1 "supported by Thalo" score, dated
     // by when that survey was actually sent/answered — not the contract's
@@ -2542,10 +2548,9 @@ function renderCustomerInfo(){
   document.getElementById('info-checkin-date').value = state.info.checkinDate || '';
   document.getElementById('info-survey1-date').value = state.info.survey1SentDate || '';
   document.getElementById('info-survey1-score').value = state.info.survey1SupportScore || '';
-  document.getElementById('info-eval-status').value = state.info.evalOrPilotStatus || 'n/a';
   document.getElementById('info-dashboard-action-date').value = state.info.dashboardFirstActionDate || '';
   const disabled = !currentCustomer || isViewerMode();
-  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score','info-eval-status','info-dashboard-action-date'].forEach(function(id){
+  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score','info-dashboard-action-date'].forEach(function(id){
     document.getElementById(id).disabled = disabled;
   });
   renderContracts();
@@ -2676,7 +2681,6 @@ async function loadCustomerState(name){
     // Segment relabel: old Type values (specialty-oem, resi-partner, buildings)
     // retired in favor of the Deployment Health segment list — remap once.
     if(SEGMENT_MIGRATION_MAP[merged.info.customerType]) merged.info.customerType = SEGMENT_MIGRATION_MAP[merged.info.customerType];
-    if(merged.info.evalOrPilotStatus === undefined || merged.info.evalOrPilotStatus === '') merged.info.evalOrPilotStatus = 'n/a';
     if(merged.info.dashboardFirstActionDate === undefined) merged.info.dashboardFirstActionDate = '';
     // Backfill year onto bonus log entries logged before the tenure-year
     // field existed — inferred from the month each entry already stored,
@@ -2787,15 +2791,12 @@ document.getElementById('info-survey1-score').addEventListener('change', functio
   if(active === 'deployment-health') renderDeploymentHealth();
 });
 
-['info-eval-status','info-dashboard-action-date'].forEach(function(id){
-  const DH_FIELD_MAP = {'info-eval-status':'evalOrPilotStatus', 'info-dashboard-action-date':'dashboardFirstActionDate'};
-  document.getElementById(id).addEventListener('change', function(e){
-    if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
-    state.info[DH_FIELD_MAP[id]] = e.target.value;
-    scheduleSave();
-    const active = document.querySelector('.tab.active').dataset.panel;
-    if(active === 'deployment-health') renderDeploymentHealth();
-  });
+document.getElementById('info-dashboard-action-date').addEventListener('change', function(e){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
+  state.info.dashboardFirstActionDate = e.target.value;
+  scheduleSave();
+  const active = document.querySelector('.tab.active').dataset.panel;
+  if(active === 'deployment-health') renderDeploymentHealth();
 });
 
 document.getElementById('contracts-list').addEventListener('change', function(e){
