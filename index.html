@@ -1570,21 +1570,31 @@ function tasksForCustomer(name, s){
   }
 
   if(contracts.length){
-    // Tie-break by id when two contracts share a signDate (happens — e.g. a
-    // main contract + its MSA doc signed the same day) — plain date equality
-    // would call BOTH of them "first," double-firing every customer-level
-    // (non-contract-suffixed) task below.
-    const sortedBySign = contracts.slice().sort(function(a,b){
-      if(a.signDate !== b.signDate) return a.signDate < b.signDate ? -1 : 1;
-      return (a.id||'').localeCompare(b.id||'');
-    });
-    const firstContractId = sortedBySign[0].id;
+    // Contracts signed the exact same day are usually one signing event
+    // wearing two hats (a real order + its MSA/TOS paperwork), not two
+    // independent deals — running a full task chain per document would
+    // duplicate everything for the same event. Group by signDate and keep
+    // only one representative per date: whichever contract actually carries
+    // a quantity (the real order), since the paperwork-only doc typically
+    // has no shipping/install data of its own to track anyway. Tie-break by
+    // id so the choice is deterministic either way.
+    function hasQuantity(c){
+      return ((parseInt(c.quantityPro,10)||0) + (parseInt(c.quantityMax,10)||0) + (parseInt(c.quantity,10)||0)) > 0;
+    }
+    const bySignDate = {};
+    contracts.forEach(function(c){ (bySignDate[c.signDate] = bySignDate[c.signDate] || []).push(c); });
+    const representatives = Object.keys(bySignDate).map(function(date){
+      const group = bySignDate[date];
+      const withQty = group.filter(hasQuantity);
+      return (withQty.length ? withQty : group).slice().sort(function(a,b){ return (a.id||'').localeCompare(b.id||''); })[0];
+    }).sort(function(a,b){ return a.signDate < b.signDate ? -1 : (a.signDate > b.signDate ? 1 : 0); });
+    const firstContractId = representatives[0].id;
     const superseded = supersededContractIds(contracts);
 
-    contracts.forEach(function(c){
+    representatives.forEach(function(c){
       if(superseded[c.id]) return; // fully replaced by a renewal — its own chain is moot
       const isFirst = c.id === firstContractId;
-      const cLabel = contracts.length > 1 ? ' — contract signed '+c.signDate : '';
+      const cLabel = representatives.length > 1 ? ' — contract signed '+c.signDate : '';
       // Once equipment has arrived without the onboarding meeting done, the
       // "equipment arrived, no training..." nudge further down says the same
       // thing more urgently — showing both is just two reminders for one gap.
@@ -1846,50 +1856,65 @@ async function renderTasksPanel(){
   else visible = all.slice();
   visible.sort(function(a,b){ return (a.effectiveDueDate||'').localeCompare(b.effectiveDueDate||''); });
 
+  function renderTaskRow(t){
+    const key = taskOverrideKey(t.customer, t.id);
+    const isDone = t.effectiveStatus === 'done';
+    const isIgnored = t.effectiveStatus === 'ignored';
+    const isSnoozed = t.effectiveStatus === 'snoozed';
+    const overdue = t.effectiveStatus === 'open' && t.effectiveDueDate < today;
+    const tagClass = overdue ? 'overdue' : t.kind;
+    const tagLabel = overdue ? 'overdue' : t.kind;
+
+    const isPureComputedDone = isDone && t.computedDone && !(t.override && t.override.status);
+    let actionsHtml;
+    if(isPureComputedDone){
+      actionsHtml = '<span class="cap-note">'+escAttr(t.doneReason || 'done')+'</span>';
+    } else if(isDone || isIgnored){
+      actionsHtml = '<button data-task-action="reopen" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>reopen</button>';
+    } else if(taskPicking[key]){
+      actionsHtml =
+        '<input type="date" class="task-date-pick" value="'+escAttr(t.effectiveDueDate)+'">'+
+        '<button data-task-action="confirm-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>set</button>'+
+        '<button data-task-action="cancel-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>cancel</button>';
+    } else {
+      actionsHtml =
+        (isSnoozed ? '<span class="cap-note" style="margin-right:4px;">snoozed to '+escAttr(t.override.snoozedUntil)+'</span>'+
+          '<button data-task-action="unsnooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>un-snooze</button>' : '')+
+        '<button data-task-action="snooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>snooze 1wk</button>'+
+        '<button data-task-action="pick-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>pick date</button>'+
+        '<button data-task-action="ignore" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>ignore</button>';
+    }
+
+    return '<div class="row task-row'+(isDone?' is-done':'')+'">'+
+      '<input type="checkbox" class="task-checkbox" data-task-key="'+escAttr(key)+'" '+(isDone?'checked':'')+' '+(isViewerMode()||isPureComputedDone?'disabled':'')+'>'+
+      '<div class="row-body">'+
+        '<div class="row-top">'+
+          '<span data-goto-customer="'+escAttr(t.customer)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);font-weight:600;font-size:14px;">'+escAttr(t.customer)+'</span>'+
+          '<span class="task-tag '+tagClass+'">'+tagLabel+'</span>'+
+        '</div>'+
+        '<div class="field-text task-label">'+escAttr(t.label)+(t.isWindow?' (schedule by)':'')+'</div>'+
+        '<div class="task-due'+(overdue?' overdue':'')+'">'+taskDueLabel(t.effectiveDueDate, today)+'</div>'+
+      '</div>'+
+      '<div class="task-actions">'+actionsHtml+'</div>'+
+    '</div>';
+  }
+
   if(!visible.length){
     html += '<div class="task-empty">Nothing here.</div>';
   } else {
-    visible.forEach(function(t){
-      const key = taskOverrideKey(t.customer, t.id);
-      const isDone = t.effectiveStatus === 'done';
-      const isIgnored = t.effectiveStatus === 'ignored';
-      const isSnoozed = t.effectiveStatus === 'snoozed';
-      const overdue = t.effectiveStatus === 'open' && t.effectiveDueDate < today;
-      const tagClass = overdue ? 'overdue' : t.kind;
-      const tagLabel = overdue ? 'overdue' : t.kind;
-
-      const isPureComputedDone = isDone && t.computedDone && !(t.override && t.override.status);
-      let actionsHtml;
-      if(isPureComputedDone){
-        actionsHtml = '<span class="cap-note">'+escAttr(t.doneReason || 'done')+'</span>';
-      } else if(isDone || isIgnored){
-        actionsHtml = '<button data-task-action="reopen" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>reopen</button>';
-      } else if(taskPicking[key]){
-        actionsHtml =
-          '<input type="date" class="task-date-pick" value="'+escAttr(t.effectiveDueDate)+'">'+
-          '<button data-task-action="confirm-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>set</button>'+
-          '<button data-task-action="cancel-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>cancel</button>';
-      } else {
-        actionsHtml =
-          (isSnoozed ? '<span class="cap-note" style="margin-right:4px;">snoozed to '+escAttr(t.override.snoozedUntil)+'</span>'+
-            '<button data-task-action="unsnooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>un-snooze</button>' : '')+
-          '<button data-task-action="snooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>snooze 1wk</button>'+
-          '<button data-task-action="pick-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>pick date</button>'+
-          '<button data-task-action="ignore" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>ignore</button>';
-      }
-
-      html += '<div class="row task-row'+(isDone?' is-done':'')+'">'+
-        '<input type="checkbox" class="task-checkbox" data-task-key="'+escAttr(key)+'" '+(isDone?'checked':'')+' '+(isViewerMode()||isPureComputedDone?'disabled':'')+'>'+
-        '<div class="row-body">'+
-          '<div class="row-top">'+
-            '<span data-goto-customer="'+escAttr(t.customer)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);font-weight:600;font-size:14px;">'+escAttr(t.customer)+'</span>'+
-            '<span class="task-tag '+tagClass+'">'+tagLabel+'</span>'+
-          '</div>'+
-          '<div class="field-text task-label">'+escAttr(t.label)+(t.isWindow?' (schedule by)':'')+'</div>'+
-          '<div class="task-due'+(overdue?' overdue':'')+'">'+taskDueLabel(t.effectiveDueDate, today)+'</div>'+
-        '</div>'+
-        '<div class="task-actions">'+actionsHtml+'</div>'+
-      '</div>';
+    // Same three buckets regardless of filter tab, so "Done"/"Ignored"/"All"
+    // stay organized the same way "Open" is, rather than switching layouts
+    // per tab.
+    const weekOut = addDaysStr(today, 7);
+    const sections = [
+      {label:'Overdue', items:visible.filter(function(t){ return t.effectiveDueDate < today; })},
+      {label:'Due this week', items:visible.filter(function(t){ return t.effectiveDueDate >= today && t.effectiveDueDate < weekOut; })},
+      {label:'Due later', items:visible.filter(function(t){ return t.effectiveDueDate >= weekOut; })}
+    ];
+    sections.forEach(function(section){
+      if(!section.items.length) return;
+      html += '<div class="phase-header">'+section.label+'</div>';
+      section.items.forEach(function(t){ html += renderTaskRow(t); });
     });
   }
 
