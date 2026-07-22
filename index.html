@@ -154,6 +154,30 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 #gh-connect-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);margin-left:10px;}
 .gh-blocked{background:#FFF7E8;border:1px solid #F2D08A;border-radius:10px;padding:16px 18px;margin-bottom:14px;font-size:13px;line-height:1.6;}
 
+.task-stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.task-stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--ink-soft);}
+.task-stat b{font-family:'Space Grotesk',sans-serif;font-size:17px;color:var(--ink);display:block;}
+.task-filter-bar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.task-filter-btn{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:5px 11px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink-soft);cursor:pointer;}
+.task-filter-btn.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+.task-filter-btn:hover:not(.active){border-color:var(--ink-soft);}
+.task-row{opacity:1;}
+.task-row.is-done{opacity:.55;}
+.task-row.is-done .task-label{text-decoration:line-through;}
+.task-checkbox{width:15px;height:15px;margin-top:3px;cursor:pointer;flex-shrink:0;}
+.task-tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap;}
+.task-tag.email{color:var(--nina);border:1px solid var(--nina);}
+.task-tag.internal{color:var(--eg);border:1px solid var(--eg);}
+.task-tag.nudge{color:var(--mellina);border:1px solid var(--mellina);}
+.task-tag.manual{color:var(--ink-soft);border:1px solid var(--line);}
+.task-tag.overdue{color:#fff;background:var(--t-warmup);border:1px solid var(--t-warmup);}
+.task-due{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+.task-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+.task-actions button{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);cursor:pointer;}
+.task-actions button:hover{border-color:var(--ink-soft);color:var(--ink);}
+.task-actions input[type=date]{font-family:'IBM Plex Sans',sans-serif;font-size:11.5px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--ink);}
+.task-empty{text-align:center;color:var(--ink-soft);font-size:13px;padding:36px 0;}
+
 body.viewer-mode input:disabled,
 body.viewer-mode select:disabled,
 body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
@@ -242,6 +266,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <div class="tab" data-panel="scorecard">Scorecard</div>
     <div class="tab" data-panel="activity">Activity</div>
     <div class="tab active" data-panel="leaderboard">All customers</div>
+    <div class="tab" data-panel="tasks">Tasks &amp; alerts</div>
     <div class="tab" data-panel="search">Search</div>
   </div>
 
@@ -253,6 +278,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   <div class="panel" id="panel-scorecard"></div>
   <div class="panel" id="panel-activity"></div>
   <div class="panel active" id="panel-leaderboard"></div>
+  <div class="panel" id="panel-tasks"></div>
   <div class="panel" id="panel-search"></div>
 
   <footer>
@@ -701,7 +727,7 @@ function emptyContract(){
   return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -710,6 +736,9 @@ let state = defaultCustomerState();
 let saveTimer = null;
 let selectedQuarter = 'q1';
 let selectedYear = 1;
+let taskFilter = 'open';
+let taskPicking = {};
+let addTaskFormOpen = false;
 
 function ownerPills(owners){
   return owners.map(function(o){ return '<span class="pill" style="background:'+OWNER_COLOR[o]+'">'+OWNER_LABEL[o]+'</span>'; }).join('');
@@ -1146,6 +1175,18 @@ function effectiveMaxForQuarter(year, q){
   return maxDeliveryForQuarter(year, q) + bonusCapForQuarter(year, q);
 }
 
+// A contract explicitly flagged as "renews" another one supersedes it — that
+// older contract's end date shouldn't compete for "next renewal," and it
+// shouldn't spawn its own hardware/install/renewal tasks anymore either.
+// Additions/expansions run alongside everything else and stay in play.
+function supersededContractIds(contracts){
+  const supersededIds = {};
+  (contracts||[]).forEach(function(c){
+    if(c.type === 'renewal' && c.renewsContractId) supersededIds[c.renewsContractId] = true;
+  });
+  return supersededIds;
+}
+
 function contractSummary(contracts){
   contracts = contracts || [];
   const totalPro = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantityPro, 10) || 0); }, 0);
@@ -1158,14 +1199,7 @@ function contractSummary(contracts){
 
   const todayStr = nycTodayStr();
 
-  // A contract explicitly flagged as "renews" another one supersedes it —
-  // that older contract's end date shouldn't compete for "next renewal."
-  // Additions/expansions run alongside everything else and stay in play.
-  const supersededIds = {};
-  contracts.forEach(function(c){
-    if(c.type === 'renewal' && c.renewsContractId) supersededIds[c.renewsContractId] = true;
-  });
-  const nonSuperseded = contracts.filter(function(c){ return !supersededIds[c.id]; });
+  const nonSuperseded = contracts.filter(function(c){ return !supersededContractIds(contracts)[c.id]; });
 
   // "Open" (the count shown as "N (M open)") means still live today: not
   // superseded by a renewal, AND not already past its own end date. A
@@ -1291,6 +1325,24 @@ function daysSince(dateStr){
   const t1 = Date.UTC(p1.y, p1.mo-1, p1.d);
   const t2 = Date.UTC(p2.y, p2.mo-1, p2.d);
   return Math.floor((t2 - t1) / (1000*60*60*24));
+}
+
+// UTC-anchored, same reasoning as nycTodayStr/dateParts above — plain local
+// Date arithmetic (setDate/setMonth) silently rolls a 'YYYY-MM-DD' string
+// back a calendar day for anyone west of UTC.
+function toISODateUTC(y, mo, d){
+  const dt = new Date(Date.UTC(y, mo, d));
+  return dt.toISOString().slice(0,10);
+}
+function addDaysStr(dateStr, n){
+  const p = dateParts(dateStr);
+  if(!p) return '';
+  return toISODateUTC(p.y, p.mo-1, p.d + n);
+}
+function addMonthsStr(dateStr, n){
+  const p = dateParts(dateStr);
+  if(!p) return '';
+  return toISODateUTC(p.y, p.mo-1+n, p.d);
 }
 
 function currentQuarterInfo(contracts){
@@ -1477,6 +1529,389 @@ function overarchingDocTypeLabel(tosContract){
   return CONTRACT_DOC_TYPE_LABEL[tosContract.contractDocType||''] || tosContract.contractDocType;
 }
 
+/* ===== Tasks & alerts rule engine =====
+   Pure function of today's date + each customer's existing anchor dates —
+   nothing here is manually maintained, it's recomputed on every load. Two
+   escape hatches keep it from duplicating the existing Cadence/deliveries
+   scoring system and the per-customer date fields:
+   (1) DELIVERIES_AUTO_RESOLVE — a handful of tasks (kickoff, tracking email)
+       exactly mirror a Cadence item; once that item's been scored there,
+       the matching task here is treated as done without ever writing its
+       own taskOverrides entry.
+   (2) computedDone — "schedule by" tasks whose own completion is really
+       just "has this anchor date been filled in yet" (training meeting,
+       post-install check-in) read that field directly instead of needing
+       a manual checkbox. */
+
+const DELIVERIES_AUTO_RESOLVE = {
+  welcome_email:'signed', kickoff_day1:'signed', kickoff_day3:'signed', kickoff_day7:'signed', kickoff_day14:'signed'
+};
+const DELIVERIES_AUTO_RESOLVE_PREFIX = { tracking_email:'shipping', ship_delay:'shipping' };
+
+function autoResolvedFromDeliveries(taskId, deliveries){
+  deliveries = deliveries || {};
+  if(DELIVERIES_AUTO_RESOLVE[taskId]) return (deliveries[DELIVERIES_AUTO_RESOLVE[taskId]] || 0) > 0;
+  const prefix = taskId.split(':')[0];
+  if(DELIVERIES_AUTO_RESOLVE_PREFIX[prefix]) return (deliveries[DELIVERIES_AUTO_RESOLVE_PREFIX[prefix]] || 0) > 0;
+  return false;
+}
+
+function tasksForCustomer(name, s){
+  const tasks = [];
+  const info = s.info || {};
+  const contracts = (info.contracts || []).filter(function(c){ return c.signDate; });
+
+  function push(id, label, dueDate, kind, opts){
+    if(!dueDate) return;
+    opts = opts || {};
+    tasks.push({id:id, customer:name, label:label, dueDate:dueDate, kind:kind, isWindow:!!opts.isWindow,
+      computedDone:!!opts.computedDone, doneReason:opts.doneReason||''});
+  }
+
+  if(contracts.length){
+    const firstSigned = contracts.map(function(c){ return c.signDate; }).sort()[0];
+    const superseded = supersededContractIds(contracts);
+
+    contracts.forEach(function(c){
+      if(superseded[c.id]) return; // fully replaced by a renewal — its own chain is moot
+      const isFirst = c.signDate === firstSigned;
+      const cLabel = contracts.length > 1 ? ' — contract signed '+c.signDate : '';
+
+      if(isFirst){
+        push('welcome_email', 'Welcome email', c.signDate, 'email');
+        [1,3,7,14].forEach(function(n){
+          push('kickoff_day'+n, 'Kickoff sequence — day '+n+' touchpoint', addDaysStr(c.signDate, n), 'email');
+        });
+        push('install_training_meeting', 'Installation training meeting — schedule', addDaysStr(c.signDate, 7), 'nudge',
+          {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
+      } else {
+        // Existing customer signing a renewal/addition — no re-onboarding,
+        // just an ack that a new contract landed and a training refresher
+        // offer, both plain manual-checkoff tasks (no per-contract training
+        // date exists to derive completion from the way the first one does).
+        push('contract_ack_email:'+c.id, 'New contract acknowledgment email'+cLabel, c.signDate, 'email');
+        push('training_refresher:'+c.id, 'Training refresher — schedule if needed'+cLabel, addDaysStr(c.signDate, 7), 'nudge', {isWindow:true});
+      }
+
+      if(c.shippedDate){
+        push('tracking_email:'+c.id, 'Hardware tracking email'+cLabel, c.shippedDate, 'email');
+      } else {
+        // hardwareOrderedDate has no dedicated field yet — signDate is the
+        // order-trigger proxy (hardware gets ordered once the deal's signed).
+        push('ship_delay:'+c.id, 'Hardware ordered, not yet shipped (10+ days)'+cLabel, addDaysStr(c.signDate, 10), 'nudge');
+      }
+
+      if(c.installDate){
+        push('post_install_checkin:'+c.id, 'Post-install check-in — schedule'+cLabel, addDaysStr(c.installDate, 3), 'nudge',
+          {isWindow:true, computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
+      } else if(c.actualDelivery){
+        // installTrainingDate only really exists for the customer's first
+        // contract (mapped to onboardingMeetingDate) — later contracts fall
+        // straight to the arrived-only nudge, there's no per-contract
+        // training anchor to compare against.
+        const training = isFirst ? info.onboardingMeetingDate : '';
+        if(training){
+          const base = training > c.actualDelivery ? training : c.actualDelivery;
+          push('install_nudge_a:'+c.id, 'Equipment arrived + training done, no install yet'+cLabel, addDaysStr(base, 7), 'nudge', {isWindow:true});
+        } else {
+          push('install_nudge_b:'+c.id, 'Equipment arrived, no training or install scheduled'+cLabel, addDaysStr(c.actualDelivery, 7), 'nudge', {isWindow:true});
+        }
+      }
+
+      if(c.expirationDate){
+        const lengthMonths = monthsBetween(c.signDate, c.expirationDate);
+        const end = c.expirationDate;
+        if(lengthMonths >= 6){
+          push('renewal_2mo:'+c.id, 'Renewal email — 2 months out'+cLabel, addMonthsStr(end, -2), 'email');
+          push('renewal_1mo:'+c.id, 'Renewal email — 1 month out'+cLabel, addMonthsStr(end, -1), 'email');
+        } else if(lengthMonths >= 3){
+          push('renewal_2wk:'+c.id, 'Renewal email — 2 weeks out'+cLabel, addDaysStr(end, -14), 'email');
+        } else {
+          push('renewal_1wk:'+c.id, 'Renewal email — 1 week out'+cLabel, addDaysStr(end, -7), 'email');
+        }
+        if(lengthMonths >= 8){
+          tasks.push({id:'renewal_internal:'+c.id, customer:name, label:'Internal discussion — renewal strategy'+cLabel,
+            dueDate:addMonthsStr(end, -3), kind:'internal', isWindow:false, computedDone:false, doneReason:''});
+        }
+      }
+    });
+  }
+
+  const lastWin = lastWinInfo(s.bonusLog || {});
+  if(lastWin && lastWin.date){
+    const weeksSince = daysSince(lastWin.date) / 7;
+    if(weeksSince > 6){
+      push('re_engage', 'No win or meeting logged in '+Math.floor(weeksSince)+' weeks', addDaysStr(lastWin.date, 42), 'nudge');
+    }
+  }
+
+  if(info.survey1SentDate && !info.survey1SupportScore){
+    const daysSinceSent = daysSince(info.survey1SentDate);
+    if(daysSinceSent !== null && daysSinceSent > 7){
+      push('survey_followup', 'Survey sent, no response ('+daysSinceSent+' days)', addDaysStr(info.survey1SentDate, 7), 'nudge');
+    }
+  }
+
+  (info.manualTasks || []).forEach(function(mt){
+    push(mt.id, mt.label, mt.dueDate, 'manual');
+  });
+
+  tasks.forEach(function(task){
+    if(!task.computedDone) task.computedDone = autoResolvedFromDeliveries(task.id, s.deliveries);
+    if(task.computedDone && !task.doneReason) task.doneReason = 'scored in Cadence tab';
+  });
+
+  return tasks;
+}
+
+function genManualTaskId(){
+  return 'mt-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+}
+
+function taskOverrideKey(customer, taskId){ return customer+'::'+taskId; }
+
+// Applies taskOverrides on top of a rule-generated task list: status
+// done/ignored, snoozedUntil suppression, dueDateOverride replacement.
+// Returns each task augmented with {effectiveDueDate, effectiveStatus}
+// ('open'|'done'|'ignored'), leaving the raw fields untouched so "reopen"
+// and "pick date" can still see the original computed due date.
+function applyTaskOverrides(tasks, overridesByCustomer){
+  const today = nycTodayStr();
+  return tasks.map(function(task){
+    const overrides = (overridesByCustomer[task.customer] || {});
+    const ov = overrides[task.id] || {};
+    let effectiveStatus = 'open';
+    if(ov.status === 'ignored') effectiveStatus = 'ignored';
+    else if(ov.status === 'done' || task.computedDone) effectiveStatus = 'done';
+    else if(ov.snoozedUntil && ov.snoozedUntil > today) effectiveStatus = 'snoozed';
+    const effectiveDueDate = ov.dueDateOverride || task.dueDate;
+    return Object.assign({}, task, {effectiveDueDate:effectiveDueDate, effectiveStatus:effectiveStatus, override:ov});
+  });
+}
+
+// Mutates a customer's task data and persists it. When the target is the
+// currently-selected customer, mutate the live in-memory `state` and go
+// through the normal debounced save — otherwise the next scheduleSave() for
+// the open customer would overwrite this change with its own stale copy.
+// For any other customer, load fresh, mutate, and save immediately (there's
+// no in-progress edit session there to race against).
+async function mutateCustomerTaskData(name, mutatorFn){
+  if(name === currentCustomer){
+    mutatorFn(state.info);
+    scheduleSave();
+    return;
+  }
+  const s = await loadCustomerState(name);
+  mutatorFn(s.info);
+  await saveCustomerState(name, s);
+}
+
+async function setTaskStatus(customer, taskId, status){
+  await mutateCustomerTaskData(customer, function(info){
+    if(!info.taskOverrides) info.taskOverrides = {};
+    const existing = info.taskOverrides[taskId] || {};
+    if(status) existing.status = status; else delete existing.status;
+    if(Object.keys(existing).length) info.taskOverrides[taskId] = existing;
+    else delete info.taskOverrides[taskId];
+  });
+  renderTasksPanel();
+}
+async function snoozeTask(customer, taskId){
+  const until = addDaysStr(nycTodayStr(), 7);
+  await mutateCustomerTaskData(customer, function(info){
+    if(!info.taskOverrides) info.taskOverrides = {};
+    info.taskOverrides[taskId] = Object.assign({}, info.taskOverrides[taskId], {snoozedUntil:until});
+  });
+  renderTasksPanel();
+}
+async function unsnoozeTask(customer, taskId){
+  await mutateCustomerTaskData(customer, function(info){
+    const existing = info.taskOverrides && info.taskOverrides[taskId];
+    if(!existing) return;
+    delete existing.snoozedUntil;
+    if(Object.keys(existing).length === 0) delete info.taskOverrides[taskId];
+  });
+  renderTasksPanel();
+}
+async function setTaskDueDateOverride(customer, taskId, dateVal){
+  await mutateCustomerTaskData(customer, function(info){
+    if(!info.taskOverrides) info.taskOverrides = {};
+    info.taskOverrides[taskId] = Object.assign({}, info.taskOverrides[taskId], {dueDateOverride:dateVal});
+  });
+  delete taskPicking[taskOverrideKey(customer, taskId)];
+  renderTasksPanel();
+}
+async function addManualTask(customer, label, dueDate){
+  const id = genManualTaskId();
+  await mutateCustomerTaskData(customer, function(info){
+    if(!info.manualTasks) info.manualTasks = [];
+    info.manualTasks.push({id:id, label:label, dueDate:dueDate});
+  });
+  renderTasksPanel();
+}
+
+async function computeAllTasks(){
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  const perCustomer = await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    return {name:name, s:s};
+  }));
+  const overridesByCustomer = {};
+  let raw = [];
+  perCustomer.forEach(function(entry){
+    overridesByCustomer[entry.name] = entry.s.info.taskOverrides || {};
+    raw = raw.concat(tasksForCustomer(entry.name, entry.s));
+  });
+  return {tasks:applyTaskOverrides(raw, overridesByCustomer), customerList:list};
+}
+
+function taskDueLabel(dueDate, today){
+  const diff = daysBetween(dueDate, today);
+  if(diff > 0) return diff+' day'+(diff===1?'':'s')+' overdue';
+  if(diff === 0) return 'due today';
+  const inDays = -diff;
+  return 'in '+inDays+' day'+(inDays===1?'':'s')+' · '+dueDate;
+}
+
+const TASK_FILTERS = [{key:'open', label:'Open'}, {key:'ignored', label:'Ignored'}, {key:'done', label:'Done'}, {key:'all', label:'All'}];
+
+async function renderTasksPanel(){
+  const el = document.getElementById('panel-tasks');
+  el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading tasks…</div>';
+  const result = await computeAllTasks();
+  const all = result.tasks, customerList = result.customerList;
+  const today = nycTodayStr();
+
+  if(customerList.length === 0){
+    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">No customers added yet. Add one from the bar above.</div></div></div>';
+    return;
+  }
+
+  const trulyOpen = all.filter(function(t){ return t.effectiveStatus === 'open'; });
+  const overdueCount = trulyOpen.filter(function(t){ return t.effectiveDueDate < today; }).length;
+
+  let html = '<div class="task-stats">'+
+    '<div class="task-stat"><b>'+trulyOpen.length+'</b>open</div>'+
+    '<div class="task-stat"><b style="color:var(--t-warmup);">'+overdueCount+'</b>overdue</div>'+
+  '</div>';
+
+  html += '<div class="task-filter-bar">'+
+    TASK_FILTERS.map(function(f){ return '<button class="task-filter-btn'+(taskFilter===f.key?' active':'')+'" data-task-filter="'+f.key+'">'+f.label+'</button>'; }).join('')+
+    '<button id="task-add-toggle" class="task-filter-btn" style="margin-left:auto;" '+(isViewerMode()?'disabled':'')+'>+ add task</button>'+
+  '</div>';
+
+  if(addTaskFormOpen){
+    const customerOptions = customerList.slice().sort(function(a,b){ return a.localeCompare(b, undefined, {sensitivity:'base'}); })
+      .map(function(n){ return '<option value="'+escAttr(n)+'">'+escAttr(n)+'</option>'; }).join('');
+    html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
+      '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
+        '<div class="info-field" style="min-width:180px;"><label>Customer</label><select id="task-add-customer">'+customerOptions+'</select></div>'+
+        '<div class="info-field" style="min-width:220px;flex:1;"><label>Description</label><input type="text" id="task-add-label" placeholder="what needs to happen"></div>'+
+        '<div class="info-field" style="max-width:150px;"><label>Due date</label><input type="date" id="task-add-date"></div>'+
+      '</div>'+
+      '<div class="bonus-add"><button class="submit" id="task-add-submit">Add</button></div>'+
+    '</div>';
+  }
+
+  let visible;
+  if(taskFilter === 'open') visible = all.filter(function(t){ return t.effectiveStatus === 'open'; });
+  else if(taskFilter === 'ignored') visible = all.filter(function(t){ return t.effectiveStatus === 'ignored'; });
+  else if(taskFilter === 'done') visible = all.filter(function(t){ return t.effectiveStatus === 'done'; });
+  else visible = all.slice();
+  visible.sort(function(a,b){ return (a.effectiveDueDate||'').localeCompare(b.effectiveDueDate||''); });
+
+  if(!visible.length){
+    html += '<div class="task-empty">Nothing here.</div>';
+  } else {
+    visible.forEach(function(t){
+      const key = taskOverrideKey(t.customer, t.id);
+      const isDone = t.effectiveStatus === 'done';
+      const isIgnored = t.effectiveStatus === 'ignored';
+      const isSnoozed = t.effectiveStatus === 'snoozed';
+      const overdue = t.effectiveStatus === 'open' && t.effectiveDueDate < today;
+      const tagClass = overdue ? 'overdue' : t.kind;
+      const tagLabel = overdue ? 'overdue' : t.kind;
+
+      const isPureComputedDone = isDone && t.computedDone && !(t.override && t.override.status);
+      let actionsHtml;
+      if(isPureComputedDone){
+        actionsHtml = '<span class="cap-note">'+escAttr(t.doneReason || 'done')+'</span>';
+      } else if(isDone || isIgnored){
+        actionsHtml = '<button data-task-action="reopen" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>reopen</button>';
+      } else if(taskPicking[key]){
+        actionsHtml =
+          '<input type="date" class="task-date-pick" value="'+escAttr(t.effectiveDueDate)+'">'+
+          '<button data-task-action="confirm-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>set</button>'+
+          '<button data-task-action="cancel-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>cancel</button>';
+      } else {
+        actionsHtml =
+          (isSnoozed ? '<span class="cap-note" style="margin-right:4px;">snoozed to '+escAttr(t.override.snoozedUntil)+'</span>'+
+            '<button data-task-action="unsnooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>un-snooze</button>' : '')+
+          '<button data-task-action="snooze" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>snooze 1wk</button>'+
+          '<button data-task-action="pick-date" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>pick date</button>'+
+          '<button data-task-action="ignore" data-task-key="'+escAttr(key)+'" '+(isViewerMode()?'disabled':'')+'>ignore</button>';
+      }
+
+      html += '<div class="row task-row'+(isDone?' is-done':'')+'">'+
+        '<input type="checkbox" class="task-checkbox" data-task-key="'+escAttr(key)+'" '+(isDone?'checked':'')+' '+(isViewerMode()||isPureComputedDone?'disabled':'')+'>'+
+        '<div class="row-body">'+
+          '<div class="row-top">'+
+            '<span data-goto-customer="'+escAttr(t.customer)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);font-weight:600;font-size:14px;">'+escAttr(t.customer)+'</span>'+
+            '<span class="task-tag '+tagClass+'">'+tagLabel+'</span>'+
+          '</div>'+
+          '<div class="field-text task-label">'+escAttr(t.label)+(t.isWindow?' (schedule by)':'')+'</div>'+
+          '<div class="task-due'+(overdue?' overdue':'')+'">'+taskDueLabel(t.effectiveDueDate, today)+'</div>'+
+        '</div>'+
+        '<div class="task-actions">'+actionsHtml+'</div>'+
+      '</div>';
+    });
+  }
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('.task-filter-btn[data-task-filter]').forEach(function(btn){
+    btn.addEventListener('click', function(){ taskFilter = btn.dataset.taskFilter; renderTasksPanel(); });
+  });
+  const addToggleBtn = document.getElementById('task-add-toggle');
+  if(addToggleBtn) addToggleBtn.addEventListener('click', function(){ addTaskFormOpen = !addTaskFormOpen; renderTasksPanel(); });
+  const addSubmitBtn = document.getElementById('task-add-submit');
+  if(addSubmitBtn) addSubmitBtn.addEventListener('click', async function(){
+    const customer = document.getElementById('task-add-customer').value;
+    const label = document.getElementById('task-add-label').value.trim();
+    const dueDate = document.getElementById('task-add-date').value;
+    if(!customer || !label || !dueDate){ flashSaveStatus('fill in customer, description, and date'); return; }
+    addTaskFormOpen = false;
+    await addManualTask(customer, label, dueDate);
+  });
+  el.querySelectorAll('.task-checkbox').forEach(function(cb){
+    cb.addEventListener('change', async function(){
+      const parts = cb.dataset.taskKey.split('::');
+      const customer = parts[0], taskId = parts.slice(1).join('::');
+      await setTaskStatus(customer, taskId, cb.checked ? 'done' : null);
+    });
+  });
+  el.querySelectorAll('button[data-task-action]').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      const parts = btn.dataset.taskKey.split('::');
+      const customer = parts[0], taskId = parts.slice(1).join('::');
+      const action = btn.dataset.taskAction;
+      if(action === 'ignore') await setTaskStatus(customer, taskId, 'ignored');
+      else if(action === 'reopen') await setTaskStatus(customer, taskId, null);
+      else if(action === 'snooze') await snoozeTask(customer, taskId);
+      else if(action === 'unsnooze') await unsnoozeTask(customer, taskId);
+      else if(action === 'pick-date'){ taskPicking[btn.dataset.taskKey] = true; renderTasksPanel(); }
+      else if(action === 'cancel-date'){ delete taskPicking[btn.dataset.taskKey]; renderTasksPanel(); }
+      else if(action === 'confirm-date'){
+        const row = btn.closest('.task-row');
+        const input = row ? row.querySelector('.task-date-pick') : null;
+        if(input && input.value) await setTaskDueDateOverride(customer, taskId, input.value);
+        else { delete taskPicking[btn.dataset.taskKey]; renderTasksPanel(); }
+      }
+    });
+  });
+}
+
 const LEADERBOARD_COLUMNS = [
   {key:'name', label:'Customer', get:function(r){ return (r.name||'').toLowerCase(); }},
   {key:'type', label:'Type', get:function(r){ return (CUSTOMER_TYPE_LABEL[r.info.customerType]||'').toLowerCase(); }},
@@ -1627,6 +2062,8 @@ function updateProgress(){
     line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+escAttr(currentCustomer)+'</b>':'');
   } else if(active==='leaderboard'){
     line.innerHTML = 'Every customer, ranked by current standing';
+  } else if(active==='tasks'){
+    line.innerHTML = 'Every open task and alert, across every customer';
   } else {
     line.innerHTML = 'Reference library, nothing to score here';
   }
@@ -1767,6 +2204,8 @@ async function loadCustomerState(name){
       if(c.isOverarchingTos === undefined) c.isOverarchingTos = false;
     });
     if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
+    if(!merged.info.taskOverrides) merged.info.taskOverrides = {};
+    if(!merged.info.manualTasks) merged.info.manualTasks = [];
     // Backfill year onto bonus log entries logged before the tenure-year
     // field existed — inferred from the month each entry already stored,
     // so 2025's Q1 and 2026's Q1 entries stop colliding in the same bucket.
@@ -2194,6 +2633,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='milestones') renderMilestones();
     if(tab.dataset.panel==='activity') renderActivity();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
+    if(tab.dataset.panel==='tasks') renderTasksPanel();
     if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
   });
