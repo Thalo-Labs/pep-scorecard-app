@@ -1570,13 +1570,25 @@ function tasksForCustomer(name, s){
   }
 
   if(contracts.length){
-    const firstSigned = contracts.map(function(c){ return c.signDate; }).sort()[0];
+    // Tie-break by id when two contracts share a signDate (happens — e.g. a
+    // main contract + its MSA doc signed the same day) — plain date equality
+    // would call BOTH of them "first," double-firing every customer-level
+    // (non-contract-suffixed) task below.
+    const sortedBySign = contracts.slice().sort(function(a,b){
+      if(a.signDate !== b.signDate) return a.signDate < b.signDate ? -1 : 1;
+      return (a.id||'').localeCompare(b.id||'');
+    });
+    const firstContractId = sortedBySign[0].id;
     const superseded = supersededContractIds(contracts);
 
     contracts.forEach(function(c){
       if(superseded[c.id]) return; // fully replaced by a renewal — its own chain is moot
-      const isFirst = c.signDate === firstSigned;
+      const isFirst = c.id === firstContractId;
       const cLabel = contracts.length > 1 ? ' — contract signed '+c.signDate : '';
+      // Once equipment has arrived without the onboarding meeting done, the
+      // "equipment arrived, no training..." nudge further down says the same
+      // thing more urgently — showing both is just two reminders for one gap.
+      const arrivalNudgeSupersedesTraining = isFirst && !c.installDate && c.actualDelivery && !info.onboardingMeetingDate;
 
       if(isFirst){
         // Day 1/3 dropped — day 1 just re-said "kickoff sequence starts",
@@ -1589,8 +1601,10 @@ function tasksForCustomer(name, s){
         // training, not the physical sensor install) — matches its name and
         // its 2-week-from-signing autoscore threshold, rather than the
         // generic 7-day guess this used to run on.
-        push('install_training_meeting', 'Onboarding meeting — schedule', addDaysStr(c.signDate, 14), 'nudge',
-          {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
+        if(!arrivalNudgeSupersedesTraining){
+          push('install_training_meeting', 'Onboarding meeting — schedule', addDaysStr(c.signDate, 14), 'nudge',
+            {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
+        }
       } else {
         // Existing customer signing a renewal/addition — no re-onboarding,
         // just an ack that a new contract landed and a training refresher
