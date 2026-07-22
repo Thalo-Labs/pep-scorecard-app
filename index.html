@@ -2454,15 +2454,29 @@ async function renderDeploymentHealth(){
   }catch(e){ knownQuarters = []; }
 
   const isLive = dhViewingLabel === thisQ;
-  const viewData = isLive ? thisQData : ((await dhGetQuarterData(dhViewingLabel)) || thisQData);
+  const frozenViewData = isLive ? null : await dhGetQuarterData(dhViewingLabel);
+  // A past quarter with no frozen snapshot isn't "no data" — it's just never
+  // been frozen. Every quarter's cohort is computable straight from customer
+  // sign/ship dates already on file, so recompute it live instead of falling
+  // back to This Quarter's numbers under the wrong label.
+  const viewData = isLive ? thisQData : (frozenViewData || await dhComputeLiveData({quarter: dhViewingLabel}));
+  const isFrozen = !isLive && !!frozenViewData;
 
-  const options = Array.from(new Set([thisQ, lastQ].concat(knownQuarters))).sort().reverse();
+  // Every quarter of the current year through the current one is always
+  // offered, live-computable or not, plus anything that happens to be frozen
+  // from an earlier year.
+  const thisQNum = parseInt(thisQ.slice(1,2), 10);
+  const yearQuartersSoFar = [];
+  for(let q=1; q<=thisQNum; q++) yearQuartersSoFar.push('Q'+q+' '+ytdYear);
+  const options = Array.from(new Set(yearQuartersSoFar.concat([lastQ]).concat(knownQuarters))).sort().reverse();
 
   el.innerHTML =
     '<div class="dh-history-bar"><label>Viewing: <select id="dh-history-select">'+
       options.map(function(q){ return '<option value="'+q+'" '+(q===dhViewingLabel?'selected':'')+'>'+q+(q===thisQ?' (current — live)':'')+'</option>'; }).join('')+
     '</select></label></div>'+
-    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live every time this tab opens, scoped to customers signed or shipped that quarter. Hover any number in the table for the customers behind it.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended. Hover any number in the table for the customers behind it.')+'</p>'+
+    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live every time this tab opens, scoped to customers signed or shipped that quarter. Hover any number in the table for the customers behind it.'
+      : isFrozen ? 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended. Hover any number in the table for the customers behind it.'
+      : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — no frozen snapshot exists for this quarter, so it\'s recomputed live from current customer sign/ship dates. Hover any number in the table for the customers behind it.')+'</p>'+
     '<div class="dh-gauges" id="dh-gauges"></div>'+
     '<table class="dh-metrics" id="dh-metrics-table"></table>'+
     '<div class="dh-formula" id="dh-formula-note"></div>';
@@ -2476,7 +2490,7 @@ async function renderDeploymentHealth(){
     'Percent metrics without a defined target (conversion, expansion) score as the raw percentage. "Days to first dashboard action" is excluded '+
     'from both scores until usage tracking ships. Table cells read as <b>this period (YTD)</b> — the YTD figure in parentheses is always the current year-to-date, live, regardless of which period is selected above.<br><br>'+
     '<strong>ICP mapping:</strong> '+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(' + ')+' roll up into ICP. Every other segment rolls up into Others.<br><br>'+
-    '<strong>Cohort scoping:</strong> a customer counts toward a given quarter or '+ytdLabel+' if their original contract was <i>signed</i> in that window <i>or shipped</i> in it — either event is enough, so a customer who signed last quarter but shipped this quarter still counts this quarter. Installing, converting, or expanding don\'t also have to land in the same window. Customers with no sign or ship date on file aren\'t counted in any period-scoped view. Customer support score scopes independently, by the period Survey #1 was actually sent/answered, since that can differ from when the customer signed or shipped.<br><br>'+
+    '<strong>Cohort scoping:</strong> a customer counts toward a given quarter or '+ytdLabel+' if their original contract was <i>signed</i> in that window <i>or shipped</i> in it — either event is enough, so a customer who signed last quarter but shipped this quarter still counts this quarter. Installing, converting, or expanding don\'t also have to land in the same window. Customers with no sign or ship date on file aren\'t counted in any period-scoped view. Customer support score scopes independently, by the period Survey #1 was actually sent/answered, since that can differ from when the customer signed or shipped. A customer can legitimately count toward more than one quarter this way (signed in one, shipped in the next) — but '+ytdLabel+' filters the full customer list once by the year alone, so that same customer is never counted twice in a YTD figure even though they show up in two different quarters\' numbers.<br><br>'+
     '<strong>Status tags:</strong> <span class="dh-status-tag dh-status-live">LIVE</span> = calculable now from data already tracked here · '+
     '<span class="dh-status-tag dh-status-pull">DATA PULL</span> = calculable, but the field needs a manual pull from another source (survey responses, alert log) · '+
     '<span class="dh-status-tag dh-status-eng">NEEDS ENG</span> = not yet instrumented.';
