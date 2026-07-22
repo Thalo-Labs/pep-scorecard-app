@@ -135,7 +135,7 @@ table.leaderboard tr.this-customer td:nth-child(2){background:#FFF7E8;}
 .search-bar input:focus{outline:2px solid var(--eg);outline-offset:-1px;}
 .search-results{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;min-height:60px;}
 .search-results .field-text{margin:0;}
-.hover-tip-popup{position:fixed;z-index:9999;background:#1B2430;color:#fff;font-size:11.5px;font-family:'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:6px;max-width:320px;line-height:1.4;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25);}
+.hover-tip-popup{position:fixed;z-index:9999;background:#1B2430;color:#fff;font-size:11.5px;font-family:'IBM Plex Sans',sans-serif;padding:6px 10px;border-radius:6px;max-width:320px;line-height:1.4;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.25);white-space:pre-line;}
 [data-hover-tip]{cursor:default;}
 .quarter-badge{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--eg);color:#fff;letter-spacing:.03em;}
 .quarter-note{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
@@ -2328,7 +2328,31 @@ async function dhComputeLiveData(scope){
     data[d.key+'_icp'] = icpAgg[d.key];
     data[d.key+'_other'] = otherAgg[d.key];
   });
+  // Per-customer detail behind each aggregate, for the table's hover
+  // breakdowns — kept alongside the numbers even when a quarter gets frozen,
+  // so historical drill-down works the same as live.
+  data._detail = {
+    icp: icpRecords.map(function(r){ return {name:r.name, shipDays:r.shipDays, issueDays:r.issueDays, dashDays:r.dashDays, evalStatus:r.evalStatus, expansionCount:r.expansionCount}; }),
+    other: otherRecords.map(function(r){ return {name:r.name, shipDays:r.shipDays, issueDays:r.issueDays, dashDays:r.dashDays, evalStatus:r.evalStatus, expansionCount:r.expansionCount}; }),
+    icpSupport: icpSupport.map(function(r){ return {name:r.name, supportScore:r.supportScore}; }),
+    otherSupport: otherSupport.map(function(r){ return {name:r.name, supportScore:r.supportScore}; })
+  };
   return data;
+}
+
+function dhMetricTooltip(def, detail){
+  if(detail === null || detail === undefined) return 'Breakdown not available — this snapshot was saved before hover detail existed.';
+  if(!detail.length) return 'No customers in this cohort.';
+  if(def.key==='ship') return detail.map(function(r){ return r.name+' — '+(r.shipDays===null?'no ship date yet':r.shipDays+'d'); }).join('\n');
+  if(def.key==='issue') return detail.map(function(r){ return r.name+' — '+(r.issueDays===null?'no first-flag date yet':r.issueDays+'d'); }).join('\n');
+  if(def.key==='dash') return detail.map(function(r){ return r.name+' — '+(r.dashDays===null?'no dashboard-action date yet':r.dashDays+'d'); }).join('\n');
+  if(def.key==='conv') return detail.map(function(r){
+    const label = r.evalStatus==='converted' ? 'converted' : r.evalStatus==='evaluation' ? 'evaluation (not yet converted)' : 'n/a (not counted)';
+    return r.name+' — '+label;
+  }).join('\n');
+  if(def.key==='exp') return detail.map(function(r){ return r.name+' — '+r.expansionCount+' expansion order'+(r.expansionCount===1?'':'s'); }).join('\n');
+  if(def.key==='supp') return detail.map(function(r){ return r.name+' — '+(r.supportScore===null?'no score yet':r.supportScore+'/5'); }).join('\n');
+  return '';
 }
 
 // Freezes the calendar quarter that just ended the first time anyone opens
@@ -2367,10 +2391,22 @@ function dhBuildGauges(thisData, ytdData, thisLabel, ytdLabel){
   }).join('');
 }
 
-function dhBuildTable(viewData, ytdData){
+function dhBuildTable(viewData, ytdData, periodLabel, ytdLabel){
   const el = document.getElementById('dh-metrics-table');
   function fmtVal(v, suffix){ return (v===null||v===undefined) ? '—' : (Math.round(v*10)/10)+suffix; }
-  function fmtCell(v, ytdV, suffix){ return fmtVal(v, suffix)+' <span style="color:var(--ink-soft);">('+fmtVal(ytdV, suffix)+')</span>'; }
+  function detailFor(dataObj, def, group){
+    const d = dataObj._detail;
+    if(!d) return null;
+    return def.key==='supp' ? d[group+'Support'] : d[group];
+  }
+  function fmtSpan(v, suffix, label, tip){
+    return '<span data-hover-tip="'+escAttr(label+':\n'+tip)+'">'+fmtVal(v, suffix)+'</span>';
+  }
+  function fmtCell(v, ytdV, suffix, def, group){
+    const periodTip = dhMetricTooltip(def, detailFor(viewData, def, group));
+    const ytdTip = dhMetricTooltip(def, detailFor(ytdData, def, group));
+    return fmtSpan(v, suffix, periodLabel, periodTip)+' <span style="color:var(--ink-soft);">('+fmtSpan(ytdV, suffix, ytdLabel, ytdTip)+')</span>';
+  }
   let rows = '<tr><th>Metric</th><th title="'+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(', ')+'">ICP<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Others<br><span style="font-weight:400;text-transform:none;">period (YTD)</span></th><th>Target</th><th>ICP score</th><th>Others score</th></tr>';
   DH_METRIC_DEFS.forEach(function(def){
     if(def.section){ rows += '<tr class="dh-section-row"><td colspan="6">'+def.section+'</td></tr>'; return; }
@@ -2385,8 +2421,8 @@ function dhBuildTable(viewData, ytdData){
     const statusTag = st ? '<span class="dh-status-tag '+st.className+'" title="'+st.title+'">'+st.label+'</span>' : '';
     rows += '<tr>'+
       '<td class="dh-metric-name">'+def.label+statusTag+'<div class="dh-metric-note">'+def.note+'</div></td>'+
-      '<td>'+fmtCell(icpVal, icpYtdVal, def.suffix)+'</td>'+
-      '<td>'+fmtCell(otherVal, otherYtdVal, def.suffix)+'</td>'+
+      '<td>'+fmtCell(icpVal, icpYtdVal, def.suffix, def, 'icp')+'</td>'+
+      '<td>'+fmtCell(otherVal, otherYtdVal, def.suffix, def, 'other')+'</td>'+
       '<td>'+targetDisplay+'</td>'+
       '<td><span class="dh-score-pill" style="background:'+dhScoreClass(icpScore)+'">'+dhFmtScore(icpScore)+'</span></td>'+
       '<td><span class="dh-score-pill" style="background:'+dhScoreClass(otherScore)+'">'+dhFmtScore(otherScore)+'</span></td>'+
@@ -2423,13 +2459,13 @@ async function renderDeploymentHealth(){
     '<div class="dh-history-bar"><label>Viewing: <select id="dh-history-select">'+
       options.map(function(q){ return '<option value="'+q+'" '+(q===dhViewingLabel?'selected':'')+'>'+q+(q===thisQ?' (current — live)':'')+'</option>'; }).join('')+
     '</select></label></div>'+
-    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live every time this tab opens, scoped to customers signed that quarter.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended.')+'</p>'+
+    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live every time this tab opens, scoped to customers signed that quarter. Hover any number in the table for the customers behind it.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended. Hover any number in the table for the customers behind it.')+'</p>'+
     '<div class="dh-gauges" id="dh-gauges"></div>'+
     '<table class="dh-metrics" id="dh-metrics-table"></table>'+
     '<div class="dh-formula" id="dh-formula-note"></div>';
 
   dhBuildGauges(thisQData, ytdData, thisQ, ytdLabel);
-  dhBuildTable(viewData, ytdData);
+  dhBuildTable(viewData, ytdData, dhViewingLabel, ytdLabel);
 
   document.getElementById('dh-formula-note').innerHTML =
     'Score = average of per-metric scores (0–100). ICP and Others are scored and shown separately — never blended into one number. '+
