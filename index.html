@@ -1544,7 +1544,8 @@ function overarchingDocTypeLabel(tosContract){
        a manual checkbox. */
 
 const DELIVERIES_AUTO_RESOLVE = {
-  welcome_email:'signed', kickoff_day1:'signed', kickoff_day3:'signed', kickoff_day7:'signed', kickoff_day14:'signed'
+  welcome_email:'signed',
+  post_install_meeting_schedule:'day7-meeting', post_install_meeting_confirm:'day7-meeting'
 };
 const DELIVERIES_AUTO_RESOLVE_PREFIX = { tracking_email:'shipping', ship_delay:'shipping' };
 
@@ -1578,18 +1579,12 @@ function tasksForCustomer(name, s){
       const cLabel = contracts.length > 1 ? ' — contract signed '+c.signDate : '';
 
       if(isFirst){
+        // Day 1/3 dropped — day 1 just re-said "kickoff sequence starts",
+        // already covered by Welcome email + the existing "signed" Cadence
+        // item; day 3 had no distinct content of its own. Day 7/14 are real
+        // and now live under the c.installDate block below, since "post-
+        // install check-in" can't be scheduled before there's an install.
         push('welcome_email', 'Welcome email', c.signDate, 'email');
-        // Counts from signDate as a best estimate before install happens —
-        // once installDate is known, the sequence re-anchors to it (day 1/3/
-        // 7/14 of the customer actually being live), same as the rest of the
-        // app's Day-N convention (Day 0/3/7 in Fixed Cadence are all since
-        // install, not since signing). Otherwise a slow-to-install customer
-        // shows kickoff touchpoints as overdue before the hardware even
-        // arrived, and "day 7" reads like a lie once install lands on day 10.
-        const kickoffAnchor = c.installDate || c.signDate;
-        [1,3,7,14].forEach(function(n){
-          push('kickoff_day'+n, 'Kickoff sequence — day '+n+' touchpoint', addDaysStr(kickoffAnchor, n), 'email');
-        });
         push('install_training_meeting', 'Installation training meeting — schedule', addDaysStr(c.signDate, 7), 'nudge',
           {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
       } else {
@@ -1612,6 +1607,12 @@ function tasksForCustomer(name, s){
       if(c.installDate){
         push('post_install_checkin:'+c.id, 'Post-install check-in — schedule'+cLabel, addDaysStr(c.installDate, 3), 'nudge',
           {isWindow:true, computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
+        if(isFirst){
+          push('post_install_meeting_schedule', 'Post-install check-in meeting — schedule', addDaysStr(c.installDate, 7), 'nudge',
+            {isWindow:true, computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
+          push('post_install_meeting_confirm', 'Post-install check-in meeting — confirm it happened', addDaysStr(c.installDate, 14), 'nudge',
+            {computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
+        }
       } else if(c.actualDelivery){
         // installTrainingDate only really exists for the customer's first
         // contract (mapped to onboardingMeetingDate) — later contracts fall
