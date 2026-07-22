@@ -181,6 +181,35 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 body.viewer-mode input:disabled,
 body.viewer-mode select:disabled,
 body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
+
+/* ===== Deployment Health ===== */
+.dh-gauges{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+@media (max-width:800px){.dh-gauges{grid-template-columns:repeat(2,1fr);}}
+.dh-gauge-card{background:#12193B;border-radius:10px;padding:16px 16px 14px;color:#fff;position:relative;overflow:hidden;}
+.dh-gauge-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--eg);}
+.dh-gauge-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#A8B3E8;margin-bottom:8px;}
+.dh-gauge-value{font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700;line-height:1;display:flex;align-items:baseline;gap:4px;}
+.dh-gauge-value span{font-size:14px;color:#A8B3E8;font-weight:500;}
+.dh-gauge-meta{margin-top:6px;font-size:11px;color:#A8B3E8;}
+.dh-gauge-delta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:6px;}
+.dh-delta-up{color:#7cc9a0;}
+.dh-delta-down{color:#e0876f;}
+.dh-delta-flat{color:#A8B3E8;}
+.dh-history-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.dh-history-bar label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;}
+table.dh-metrics{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+table.dh-metrics th{background:#FAFAF7;color:var(--ink-soft);text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line);}
+table.dh-metrics td{padding:10px 12px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle;}
+table.dh-metrics tr:last-child td{border-bottom:none;}
+.dh-metric-name{font-weight:600;}
+.dh-metric-note{color:var(--ink-soft);font-size:11px;margin-top:2px;}
+.dh-section-row td{background:#FAFAF7;font-family:'Space Grotesk',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft);font-weight:700;padding:9px 12px;}
+.dh-score-pill{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px;display:inline-block;min-width:36px;text-align:center;color:#fff;}
+.dh-status-tag{font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.05em;padding:2px 6px;border-radius:4px;display:inline-block;margin-left:6px;vertical-align:middle;color:#fff;}
+.dh-status-live{background:var(--t-strong);}
+.dh-status-pull{background:var(--t-ontrack);}
+.dh-status-eng{background:var(--t-warmup);}
+.dh-formula{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin-top:20px;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -217,15 +246,16 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <select id="customer-select"></select>
     <input type="text" id="new-customer-name" placeholder="New customer name">
     <button id="add-customer">Add customer</button>
-    <label>Type</label>
+    <label>Segment</label>
     <select id="info-customer-type">
       <option value="">—</option>
       <option value="core-enterprise">Core ICP - Enterprise</option>
       <option value="core-midtier">Core ICP - Mid-tier</option>
-      <option value="specialty-oem">Speciality / OEM</option>
-      <option value="resi-partner">Resi Partner</option>
+      <option value="building-mgmt">Building Management</option>
       <option value="affiliate">Affiliate</option>
-      <option value="buildings">Buildings ("HVAC as a service")</option>
+      <option value="auto-hvac-provider">Auto HVAC Provider</option>
+      <option value="auto-hvac-user">Auto HVAC User</option>
+      <option value="bundled-resi">Bundled Resi</option>
     </select>
     <span id="save-status"></span>
   </div>
@@ -251,6 +281,30 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     </div>
   </div>
 
+  <div class="customer-info-bar">
+    <div class="info-header">
+      <span class="field-label" style="margin:0;">Deployment Health inputs — feeds the Deployment Health tab</span>
+    </div>
+    <div class="info-field"><label>Eval / pilot status</label>
+      <select id="info-eval-status">
+        <option value="n/a">N/A — no eval/pilot</option>
+        <option value="evaluation">Evaluation / pilot in progress</option>
+        <option value="converted">Converted</option>
+      </select>
+    </div>
+    <div class="info-field"><label>Dashboard first-action date <span style="font-weight:400;text-transform:none;">(not instrumented yet)</span></label><input type="date" id="info-dashboard-action-date"></div>
+    <div class="info-field"><label>Support score — Summer 2026 Copilot survey (1–5)</label>
+      <select id="info-deployment-support-score">
+        <option value="">— not answered —</option>
+        <option value="1">1 — Not supported</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5 — Very supported</option>
+      </select>
+    </div>
+  </div>
+
   <div class="contracts-panel">
     <div class="info-header">
       <span class="field-label" style="margin:0;">Contracts — one row per order, add as many as this customer has</span>
@@ -266,6 +320,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
     <div class="tab" data-panel="scorecard">Scorecard</div>
     <div class="tab" data-panel="activity">Activity</div>
     <div class="tab active" data-panel="leaderboard">All customers</div>
+    <div class="tab" data-panel="deployment-health">Deployment Health</div>
     <div class="tab" data-panel="tasks">Tasks &amp; alerts</div>
     <div class="tab" data-panel="search">Search</div>
   </div>
@@ -278,6 +333,7 @@ body.viewer-mode button:disabled{opacity:.5;cursor:not-allowed;}
   <div class="panel" id="panel-scorecard"></div>
   <div class="panel" id="panel-activity"></div>
   <div class="panel active" id="panel-leaderboard"></div>
+  <div class="panel" id="panel-deployment-health"></div>
   <div class="panel" id="panel-tasks"></div>
   <div class="panel" id="panel-search"></div>
 
@@ -511,22 +567,41 @@ document.getElementById('gh-connect-btn').addEventListener('click', async functi
 const OWNER_COLOR = {dj:'#2F6FED', eg:'#7C5CFC', mellina:'#B45309', nina:'#0F766E'};
 const OWNER_LABEL = {dj:'DJ', eg:'Elaine', mellina:'Mellina', nina:'Nina'};
 
-const CUSTOMER_TYPE_LABEL = {
+// Segment labels double as the "Type" classification shown on the Scorecard
+// and Leaderboard tabs and as the grouping for the Deployment Health rollup.
+// ICP_SEGMENTS is the single source of truth for which segments count as ICP
+// there — everything else in SEGMENT_LABEL rolls up into "Others".
+const SEGMENT_LABEL = {
   'core-enterprise':'Core ICP - Enterprise',
   'core-midtier':'Core ICP - Mid-tier',
-  'specialty-oem':'Speciality / OEM',
-  'resi-partner':'Resi Partner',
+  'building-mgmt':'Building Management',
   'affiliate':'Affiliate',
-  'buildings':'Buildings (HVAC as a service)'
+  'auto-hvac-provider':'Auto HVAC Provider',
+  'auto-hvac-user':'Auto HVAC User',
+  'bundled-resi':'Bundled Resi'
 };
-const CUSTOMER_TYPE_COLOR = {
+const SEGMENT_COLOR = {
   'core-enterprise':'#A5B4FC',
   'core-midtier':'#B39DDB',
-  'specialty-oem':'#B7DFB0',
-  'resi-partner':'#F3B4AE',
+  'building-mgmt':'#E3C08D',
   'affiliate':'#C793AE',
-  'buildings':'#E3C08D'
+  'auto-hvac-provider':'#B7DFB0',
+  'auto-hvac-user':'#8FC1D8',
+  'bundled-resi':'#F3B4AE'
 };
+const ICP_SEGMENTS = ['core-enterprise', 'core-midtier'];
+// Old segment keys renamed/retired below this list are backfilled on load
+// in loadCustomerState (see SEGMENT_MIGRATION_MAP) — 'specialty-oem' and
+// 'resi-partner' had no clean equivalent in the new segment list, so those
+// two are a best guess, worth spot-checking on the Leaderboard.
+const SEGMENT_MIGRATION_MAP = {
+  'buildings':'building-mgmt',
+  'specialty-oem':'auto-hvac-provider',
+  'resi-partner':'bundled-resi'
+};
+// Back-compat aliases — kept so nothing else in this file has to change name.
+const CUSTOMER_TYPE_LABEL = SEGMENT_LABEL;
+const CUSTOMER_TYPE_COLOR = SEGMENT_COLOR;
 const CONTRACT_DOC_TYPE_LABEL = {'':'—', 'checkoutpage':'Checkoutpage', 'msa':'MSA', 'other':'Other'};
 const QUARTER_LABEL = {q1:'Q1', q2:'Q2', q3:'Q3', q4:'Q4'};
 const QUARTER_COLOR = {q1:'#2F6FED', q2:'#0F766E', q3:'#EA580C', q4:'#DB2777'};
@@ -727,7 +802,7 @@ function emptyContract(){
   return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', evalOrPilotStatus:'n/a', dashboardFirstActionDate:'', deploymentSupportScore:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -2088,6 +2163,272 @@ async function renderLeaderboard(){
   });
 }
 
+/* ===== Deployment Health ===== */
+const DH_QUARTER_PREFIX = 'deployment-health-quarter:';
+const DH_LAST_SEEN_KEY = 'deployment-health-last-seen-quarter';
+
+const DH_METRIC_DEFS = [
+  {section:'Speed to Value'},
+  {key:'ship', label:'Days to ship post-signing', target:14, direction:'lower', suffix:'d', note:'contract signed → ship date', status:'live'},
+  {key:'issue', label:'Days to first issue detected', target:7, direction:'lower', suffix:'d', note:'install date → first flag date', status:'pull'},
+  {key:'dash', label:'Days to first dashboard action', target:null, direction:'lower', suffix:'d', note:'not instrumented yet — excluded from scoring', status:'eng'},
+  {section:'Health over Time'},
+  {key:'conv', label:'Eval package / pilot conversion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
+  {key:'exp', label:'Expansion', target:null, direction:'higher', suffix:'%', note:'higher is better', status:'live'},
+  {key:'supp', label:'Customer support score', target:4, direction:'higher', suffix:'/5', note:'target 4+/5 · Summer 2026 Copilot survey', status:'pull'}
+];
+
+const DH_STATUS_META = {
+  live: {label:'LIVE', className:'dh-status-live', title:'Calculable now by joining data already tracked in this app'},
+  pull: {label:'DATA PULL', className:'dh-status-pull', title:'Calculable, but the underlying field needs a manual pull from another source (survey responses, alert log)'},
+  eng: {label:'NEEDS ENG', className:'dh-status-eng', title:'Not yet instrumented — requires product/eng to add tracking first'}
+};
+
+// The "original" contract is whichever one has the earliest sign date — that's
+// the one whose ship/install dates feed the Speed to Value metrics, even if
+// later expansion contracts were added to the array afterward.
+function dhOriginalContract(contracts){
+  contracts = contracts || [];
+  const signed = contracts.filter(function(c){ return c.signDate; })
+    .sort(function(a,b){ return a.signDate < b.signDate ? -1 : (a.signDate > b.signDate ? 1 : 0); });
+  return signed[0] || contracts[0] || {};
+}
+function dhExpansionCount(contracts){
+  return (contracts||[]).filter(function(c){ return c.type === 'addition'; }).length;
+}
+function dhDaysBetween(fromStr, toStr){
+  if(!fromStr || !toStr) return null;
+  const from = new Date(fromStr+'T00:00:00Z'), to = new Date(toStr+'T00:00:00Z');
+  if(isNaN(from.getTime()) || isNaN(to.getTime())) return null;
+  return Math.round((to-from)/86400000);
+}
+function dhAvg(nums){
+  const clean = nums.filter(function(n){ return n!==null && n!==undefined && !isNaN(n); });
+  if(!clean.length) return null;
+  return clean.reduce(function(a,b){return a+b;},0)/clean.length;
+}
+function dhPercent(numer, denom){
+  if(!denom) return null;
+  return (numer/denom)*100;
+}
+
+function dhCustomerRecord(name, info){
+  const contracts = info.contracts || [];
+  const c0 = dhOriginalContract(contracts);
+  return {
+    name:name,
+    isIcp: ICP_SEGMENTS.indexOf(info.customerType) !== -1,
+    shipDays: dhDaysBetween(c0.signDate, c0.shippedDate),
+    issueDays: dhDaysBetween(c0.installDate, info.firstFlagDate),
+    dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
+    evalStatus: info.evalOrPilotStatus || 'n/a',
+    expansionCount: dhExpansionCount(contracts),
+    supportScore: info.deploymentSupportScore ? parseInt(info.deploymentSupportScore, 10) : null
+  };
+}
+
+function dhAggregateGroup(records){
+  const evalStarted = records.filter(function(r){ return r.evalStatus==='evaluation' || r.evalStatus==='converted'; });
+  const converted = records.filter(function(r){ return r.evalStatus==='converted'; });
+  const withExpansion = records.filter(function(r){ return r.expansionCount>0; });
+  return {
+    ship: dhAvg(records.map(function(r){return r.shipDays;})),
+    issue: dhAvg(records.map(function(r){return r.issueDays;})),
+    dash: dhAvg(records.map(function(r){return r.dashDays;})),
+    conv: dhPercent(converted.length, evalStarted.length),
+    exp: dhPercent(withExpansion.length, records.length),
+    supp: dhAvg(records.map(function(r){return r.supportScore;}))
+  };
+}
+
+function dhScoreMetric(def, value){
+  if(value===null || value===undefined || isNaN(value)) return null;
+  if(def.status === 'eng') return null; // excluded from scoring until instrumented, however calculable
+  value = Number(value);
+  if(def.direction==='lower'){
+    if(!def.target) return Math.max(0, Math.min(100, 100 - (value*1.2)));
+    return Math.max(0, Math.min(100, (def.target/value)*100));
+  } else {
+    if(!def.target) return Math.max(0, Math.min(100, value));
+    return Math.max(0, Math.min(100, (value/def.target)*100));
+  }
+}
+function dhGroupScoreVal(data, group){
+  const scores = DH_METRIC_DEFS.filter(function(d){return d.key;}).map(function(d){ return dhScoreMetric(d, data[d.key+'_'+group]); }).filter(function(s){ return s!==null; });
+  if(!scores.length) return null;
+  return scores.reduce(function(a,b){return a+b;},0)/scores.length;
+}
+function dhScoreClass(s){
+  if(s===null) return '#8f8f8f';
+  if(s>=80) return 'var(--t-strong)';
+  if(s>=50) return 'var(--t-ontrack)';
+  return 'var(--t-warmup)';
+}
+function dhFmtScore(s){ return s===null ? '—' : Math.round(s); }
+
+function dhCurrentQuarterLabel(){
+  const d = new Date();
+  const q = Math.floor(d.getMonth()/3)+1;
+  return 'Q'+q+' '+d.getFullYear();
+}
+function dhPrevQuarterLabel(label){
+  const parts = label.split(' ');
+  let qn = parseInt(parts[0].slice(1), 10), yn = parseInt(parts[1], 10);
+  qn -= 1;
+  if(qn<1){ qn=4; yn-=1; }
+  return 'Q'+qn+' '+yn;
+}
+
+async function dhGetQuarterData(label){
+  try{ const res = await window.storage.get(DH_QUARTER_PREFIX+label); return res ? JSON.parse(res.value) : null; }
+  catch(e){ return null; }
+}
+async function dhSaveQuarterData(label, data){
+  try{ await window.storage.set(DH_QUARTER_PREFIX+label, JSON.stringify(data)); }catch(e){}
+}
+async function dhGetLastSeenQuarter(){
+  try{ const res = await window.storage.get(DH_LAST_SEEN_KEY); return res ? res.value : null; }catch(e){ return null; }
+}
+async function dhSetLastSeenQuarter(label){
+  try{ await window.storage.set(DH_LAST_SEEN_KEY, label); }catch(e){}
+}
+
+async function dhComputeLiveData(){
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  const records = await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    return dhCustomerRecord(name, s.info || {});
+  }));
+  const icpRecords = records.filter(function(r){ return r.isIcp; });
+  const otherRecords = records.filter(function(r){ return !r.isIcp; });
+  const icpAgg = dhAggregateGroup(icpRecords);
+  const otherAgg = dhAggregateGroup(otherRecords);
+  const data = {_icpCount: icpRecords.length, _otherCount: otherRecords.length};
+  DH_METRIC_DEFS.filter(function(d){return d.key;}).forEach(function(d){
+    data[d.key+'_icp'] = icpAgg[d.key];
+    data[d.key+'_other'] = otherAgg[d.key];
+  });
+  return data;
+}
+
+// Freezes the calendar quarter that just ended the first time anyone opens
+// this tab after the turn, using whatever customer data exists at that
+// moment — there's no scheduled job, so this is a best-effort freeze at
+// first-view-after-turnover, not the literal last instant of the quarter.
+async function dhEnsureQuarterFreeze(){
+  const nowQ = dhCurrentQuarterLabel();
+  const lastSeen = await dhGetLastSeenQuarter();
+  if(lastSeen && lastSeen !== nowQ){
+    const existing = await dhGetQuarterData(lastSeen);
+    if(!existing) await dhSaveQuarterData(lastSeen, await dhComputeLiveData());
+  }
+  if(lastSeen !== nowQ) await dhSetLastSeenQuarter(nowQ);
+  return nowQ;
+}
+
+let dhViewingLabel = null;
+
+function dhBuildGauges(thisData, lastData, thisLabel, lastLabel){
+  const el = document.getElementById('dh-gauges');
+  const thisIcp = dhGroupScoreVal(thisData, 'icp');
+  const thisOther = dhGroupScoreVal(thisData, 'other');
+  const lastIcp = lastData ? dhGroupScoreVal(lastData, 'icp') : null;
+  const lastOther = lastData ? dhGroupScoreVal(lastData, 'other') : null;
+  function deltaHtml(cur, prev){
+    if(cur===null || prev===null) return '';
+    const diff = cur - prev;
+    const cls = diff>0.5?'dh-delta-up':diff<-0.5?'dh-delta-down':'dh-delta-flat';
+    return '<div class="dh-gauge-delta '+cls+'">'+(diff>0?'+':'')+diff.toFixed(1)+' vs last quarter</div>';
+  }
+  const cards = [
+    {label:'ICP — '+thisLabel, value:thisIcp, meta:(thisData._icpCount||0)+' customers · live', delta:deltaHtml(thisIcp,lastIcp)},
+    {label:'Others — '+thisLabel, value:thisOther, meta:(thisData._otherCount||0)+' customers · live', delta:deltaHtml(thisOther,lastOther)},
+    {label:'ICP — '+lastLabel, value:lastIcp, meta:lastData?'Frozen':'No data recorded', delta:''},
+    {label:'Others — '+lastLabel, value:lastOther, meta:lastData?'Frozen':'No data recorded', delta:''}
+  ];
+  el.innerHTML = cards.map(function(c){
+    return '<div class="dh-gauge-card"><div class="dh-gauge-label">'+escAttr(c.label)+'</div>'+
+      '<div class="dh-gauge-value">'+(c.value===null?'—':Math.round(c.value))+'<span>/100</span></div>'+
+      '<div class="dh-gauge-meta">'+c.meta+'</div>'+c.delta+'</div>';
+  }).join('');
+}
+
+function dhBuildTable(viewData){
+  const el = document.getElementById('dh-metrics-table');
+  function fmtVal(v, suffix){ return (v===null||v===undefined) ? '—' : (Math.round(v*10)/10)+suffix; }
+  let rows = '<tr><th>Metric</th><th title="'+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(', ')+'">ICP</th><th>Others</th><th>Target</th><th>ICP score</th><th>Others score</th></tr>';
+  DH_METRIC_DEFS.forEach(function(def){
+    if(def.section){ rows += '<tr class="dh-section-row"><td colspan="6">'+def.section+'</td></tr>'; return; }
+    const icpVal = viewData[def.key+'_icp'];
+    const otherVal = viewData[def.key+'_other'];
+    const icpScore = dhScoreMetric(def, icpVal);
+    const otherScore = dhScoreMetric(def, otherVal);
+    const targetDisplay = def.target ? (def.direction==='lower'?'&lt; ':'≥ ')+def.target+def.suffix : '<span style="font-style:italic;color:#aaa">TBD</span>';
+    const st = DH_STATUS_META[def.status];
+    const statusTag = st ? '<span class="dh-status-tag '+st.className+'" title="'+st.title+'">'+st.label+'</span>' : '';
+    rows += '<tr>'+
+      '<td class="dh-metric-name">'+def.label+statusTag+'<div class="dh-metric-note">'+def.note+'</div></td>'+
+      '<td>'+fmtVal(icpVal, def.suffix)+'</td>'+
+      '<td>'+fmtVal(otherVal, def.suffix)+'</td>'+
+      '<td>'+targetDisplay+'</td>'+
+      '<td><span class="dh-score-pill" style="background:'+dhScoreClass(icpScore)+'">'+dhFmtScore(icpScore)+'</span></td>'+
+      '<td><span class="dh-score-pill" style="background:'+dhScoreClass(otherScore)+'">'+dhFmtScore(otherScore)+'</span></td>'+
+      '</tr>';
+  });
+  el.innerHTML = rows;
+}
+
+async function renderDeploymentHealth(){
+  const el = document.getElementById('panel-deployment-health');
+  el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading deployment health…</div>';
+
+  const thisQ = await dhEnsureQuarterFreeze();
+  const lastQ = dhPrevQuarterLabel(thisQ);
+  if(!dhViewingLabel) dhViewingLabel = thisQ;
+
+  const thisQData = await dhComputeLiveData();
+  const lastQData = await dhGetQuarterData(lastQ);
+
+  let knownQuarters = [];
+  try{
+    const res = await window.storage.list(DH_QUARTER_PREFIX);
+    knownQuarters = (res && res.keys ? res.keys : []).map(function(k){ return k.replace(DH_QUARTER_PREFIX,''); });
+  }catch(e){ knownQuarters = []; }
+
+  const isLive = dhViewingLabel === thisQ;
+  const viewData = isLive ? thisQData : ((await dhGetQuarterData(dhViewingLabel)) || thisQData);
+
+  const options = Array.from(new Set([thisQ, lastQ].concat(knownQuarters))).sort().reverse();
+
+  el.innerHTML =
+    '<div class="dh-history-bar"><label>Viewing: <select id="dh-history-select">'+
+      options.map(function(q){ return '<option value="'+q+'" '+(q===dhViewingLabel?'selected':'')+'>'+q+(q===thisQ?' (current — live)':'')+'</option>'; }).join('')+
+    '</select></label></div>'+
+    '<p class="quarter-note">'+(isLive ? 'Showing <b>'+thisQ+'</b> — recalculated live from current customer data every time this tab opens.' : 'Showing <b>'+escAttr(dhViewingLabel)+'</b> — a frozen, read-only snapshot from the first time this tab opened after that quarter ended.')+'</p>'+
+    '<div class="dh-gauges" id="dh-gauges"></div>'+
+    '<table class="dh-metrics" id="dh-metrics-table"></table>'+
+    '<div class="dh-formula" id="dh-formula-note"></div>';
+
+  dhBuildGauges(thisQData, lastQData, thisQ, lastQ);
+  dhBuildTable(viewData);
+
+  document.getElementById('dh-formula-note').innerHTML =
+    'Score = average of per-metric scores (0–100). ICP and Others are scored and shown separately — never blended into one number. '+
+    'Lower-is-better metrics score target÷actual×100 (capped 100). Higher-is-better metrics with a target score actual÷target×100. '+
+    'Percent metrics without a defined target (conversion, expansion) score as the raw percentage. "Days to first dashboard action" is excluded '+
+    'from both scores until usage tracking ships.<br><br>'+
+    '<strong>ICP mapping:</strong> '+ICP_SEGMENTS.map(function(k){return SEGMENT_LABEL[k];}).join(' + ')+' roll up into ICP. Every other segment rolls up into Others.<br><br>'+
+    '<strong>Status tags:</strong> <span class="dh-status-tag dh-status-live">LIVE</span> = calculable now from data already tracked here · '+
+    '<span class="dh-status-tag dh-status-pull">DATA PULL</span> = calculable, but the field needs a manual pull from another source (survey responses, alert log) · '+
+    '<span class="dh-status-tag dh-status-eng">NEEDS ENG</span> = not yet instrumented.';
+
+  document.getElementById('dh-history-select').addEventListener('change', function(e){
+    dhViewingLabel = e.target.value;
+    renderDeploymentHealth();
+  });
+}
+
 function flashSaveStatus(msg){
   const status = document.getElementById('save-status');
   status.textContent = msg;
@@ -2112,6 +2453,8 @@ function updateProgress(){
     line.innerHTML = '<b>'+scored+'/'+totalItems+'</b> scorable tasks set'+(currentCustomer?' for <b>'+escAttr(currentCustomer)+'</b>':'');
   } else if(active==='leaderboard'){
     line.innerHTML = 'Every customer, ranked by current standing';
+  } else if(active==='deployment-health'){
+    line.innerHTML = 'ICP vs. Others, speed-to-value and health over time';
   } else if(active==='tasks'){
     line.innerHTML = 'Every open task and alert, across every customer';
   } else {
@@ -2127,8 +2470,11 @@ function renderCustomerInfo(){
   document.getElementById('info-checkin-date').value = state.info.checkinDate || '';
   document.getElementById('info-survey1-date').value = state.info.survey1SentDate || '';
   document.getElementById('info-survey1-score').value = state.info.survey1SupportScore || '';
+  document.getElementById('info-eval-status').value = state.info.evalOrPilotStatus || 'n/a';
+  document.getElementById('info-dashboard-action-date').value = state.info.dashboardFirstActionDate || '';
+  document.getElementById('info-deployment-support-score').value = state.info.deploymentSupportScore || '';
   const disabled = !currentCustomer || isViewerMode();
-  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score'].forEach(function(id){
+  ['info-onboarding-date','info-flag-date','info-checkin-date','info-survey1-date','info-survey1-score','info-eval-status','info-dashboard-action-date','info-deployment-support-score'].forEach(function(id){
     document.getElementById(id).disabled = disabled;
   });
   renderContracts();
@@ -2256,6 +2602,12 @@ async function loadCustomerState(name){
     if(!merged.info.touchpointPlays) merged.info.touchpointPlays = {};
     if(!merged.info.taskOverrides) merged.info.taskOverrides = {};
     if(!merged.info.manualTasks) merged.info.manualTasks = [];
+    // Segment relabel: old Type values (specialty-oem, resi-partner, buildings)
+    // retired in favor of the Deployment Health segment list — remap once.
+    if(SEGMENT_MIGRATION_MAP[merged.info.customerType]) merged.info.customerType = SEGMENT_MIGRATION_MAP[merged.info.customerType];
+    if(merged.info.evalOrPilotStatus === undefined || merged.info.evalOrPilotStatus === '') merged.info.evalOrPilotStatus = 'n/a';
+    if(merged.info.dashboardFirstActionDate === undefined) merged.info.dashboardFirstActionDate = '';
+    if(merged.info.deploymentSupportScore === undefined) merged.info.deploymentSupportScore = '';
     // Backfill year onto bonus log entries logged before the tenure-year
     // field existed — inferred from the month each entry already stored,
     // so 2025's Q1 and 2026's Q1 entries stop colliding in the same bucket.
@@ -2361,6 +2713,17 @@ document.getElementById('info-survey1-score').addEventListener('change', functio
   if(active === 'scorecard') renderScorecard();
   if(active === 'milestones') renderMilestones();
   if(active === 'activity') renderActivity();
+});
+
+['info-eval-status','info-dashboard-action-date','info-deployment-support-score'].forEach(function(id){
+  const DH_FIELD_MAP = {'info-eval-status':'evalOrPilotStatus', 'info-dashboard-action-date':'dashboardFirstActionDate', 'info-deployment-support-score':'deploymentSupportScore'};
+  document.getElementById(id).addEventListener('change', function(e){
+    if(!currentCustomer){ flashSaveStatus('pick a customer first'); e.target.value=''; return; }
+    state.info[DH_FIELD_MAP[id]] = e.target.value;
+    scheduleSave();
+    const active = document.querySelector('.tab.active').dataset.panel;
+    if(active === 'deployment-health') renderDeploymentHealth();
+  });
 });
 
 document.getElementById('contracts-list').addEventListener('change', function(e){
@@ -2683,6 +3046,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='milestones') renderMilestones();
     if(tab.dataset.panel==='activity') renderActivity();
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
+    if(tab.dataset.panel==='deployment-health') renderDeploymentHealth();
     if(tab.dataset.panel==='tasks') renderTasksPanel();
     if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
