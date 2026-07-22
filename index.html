@@ -1545,7 +1545,7 @@ function overarchingDocTypeLabel(tosContract){
 
 const DELIVERIES_AUTO_RESOLVE = {
   welcome_email:'signed',
-  post_install_meeting_schedule:'day7-meeting', post_install_meeting_confirm:'day7-meeting'
+  post_install_meeting_schedule:'day7-meeting'
 };
 const DELIVERIES_AUTO_RESOLVE_PREFIX = { tracking_email:'shipping', ship_delay:'shipping' };
 
@@ -1585,7 +1585,11 @@ function tasksForCustomer(name, s){
         // and now live under the c.installDate block below, since "post-
         // install check-in" can't be scheduled before there's an install.
         push('welcome_email', 'Welcome email', c.signDate, 'email');
-        push('install_training_meeting', 'Installation training meeting — schedule', addDaysStr(c.signDate, 7), 'nudge',
+        // Maps to Cadence's own "Onboarding meeting" item (software/dashboard
+        // training, not the physical sensor install) — matches its name and
+        // its 2-week-from-signing autoscore threshold, rather than the
+        // generic 7-day guess this used to run on.
+        push('install_training_meeting', 'Onboarding meeting — schedule', addDaysStr(c.signDate, 14), 'nudge',
           {isWindow:true, computedDone:!!info.onboardingMeetingDate, doneReason: info.onboardingMeetingDate ? 'trained '+info.onboardingMeetingDate : ''});
       } else {
         // Existing customer signing a renewal/addition — no re-onboarding,
@@ -1610,8 +1614,6 @@ function tasksForCustomer(name, s){
         if(isFirst){
           push('post_install_meeting_schedule', 'Post-install check-in meeting — schedule', addDaysStr(c.installDate, 7), 'nudge',
             {isWindow:true, computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
-          push('post_install_meeting_confirm', 'Post-install check-in meeting — confirm it happened', addDaysStr(c.installDate, 14), 'nudge',
-            {computedDone:!!info.checkinDate, doneReason: info.checkinDate ? 'checked in '+info.checkinDate : ''});
         }
       } else if(c.actualDelivery){
         // installTrainingDate only really exists for the customer's first
