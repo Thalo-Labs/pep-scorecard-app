@@ -759,6 +759,14 @@ const FEEDBACK_CATEGORIES = [
   'Onboarding',
   'Pricing / billing'
 ];
+// Categories anyone has typed into "Other — type below" get appended here
+// (shared across customers via GH storage, loaded at app init) so a custom
+// category becomes a pickable preset for every customer going forward
+// instead of only ever living as free text on the one entry that coined it.
+let CUSTOM_FEEDBACK_CATEGORIES = [];
+function allFeedbackCategories(){
+  return FEEDBACK_CATEGORIES.concat(CUSTOM_FEEDBACK_CATEGORIES);
+}
 
 const PLAYS = [
   {name:'Swag', what:'Physical goods sent to mark a moment.', when:'Milestone hit, quarterly warm touch, renewal, holidays.', owner:'DJ ships, Mellina fulfills'},
@@ -906,14 +914,14 @@ function renderMilestones(){
   }
   const editingIsOther = editingEntry && editingEntry.msId === 'ms-other';
   const editingIsFeedbackType = editingEntry && FEEDBACK_TYPES.indexOf(editingEntry.msId) !== -1;
-  const editingCategoryIsCustom = !!(editingEntry && editingEntry.category && FEEDBACK_CATEGORIES.indexOf(editingEntry.category) === -1);
+  const editingCategoryIsCustom = !!(editingEntry && editingEntry.category && allFeedbackCategories().indexOf(editingEntry.category) === -1);
 
   const typeOptions = MILESTONES.map(function(m){
     const suffix = m.id==='ms-other' ? '' : (m.points>0 ? ' — +'+m.points+' pts' : ' — no pts');
     const selectedAttr = editingEntry && editingEntry.msId===m.id ? ' selected' : '';
     return '<option value="'+m.id+'"'+selectedAttr+'>'+m.trigger+suffix+'</option>';
   }).join('');
-  const categoryOptions = FEEDBACK_CATEGORIES.map(function(c){
+  const categoryOptions = allFeedbackCategories().map(function(c){
     const selectedAttr = editingEntry && editingEntry.category===c ? ' selected' : '';
     return '<option value="'+escAttr(c)+'"'+selectedAttr+'>'+escAttr(c)+'</option>';
   }).join('');
@@ -1044,6 +1052,13 @@ function renderMilestones(){
     const q = quarterForMonth(month);
     const year = yearForMonth(month);
     const category = isFeedbackType ? (categorySelect.value === '__other__' ? categoryOtherInput.value.trim() : categorySelect.value) : '';
+    if(isFeedbackType && category && allFeedbackCategories().indexOf(category) === -1){
+      // First time anyone's typed this category — promote it from one-off
+      // free text into a shared preset so it shows up in the dropdown for
+      // every other customer from now on.
+      CUSTOM_FEEDBACK_CATEGORIES.push(category);
+      saveCustomFeedbackCategories(CUSTOM_FEEDBACK_CATEGORIES);
+    }
     if(editingBonusLogKey){
       // Splice the original out first (it may be moving to a different
       // quarter if the edited date lands in a different one) and carry its
@@ -1200,16 +1215,32 @@ function renderActivity(){
 }
 
 // Cross-customer roll-up of feature requests and friction/issue entries from
-// every customer's Bonus & feedback log, grouped by type+category. Reuses
-// the same load-live-or-fetch pattern as Deployment Health / Search so the
+// every customer's Bonus & feedback log, grouped by category — positive
+// feedback, feature requests, and friction/issues about the same thing all
+// land in one group, since the point of this tab is "what are customers
+// telling us about X", not "how many of each label type exist". Reuses the
+// same load-live-or-fetch pattern as Deployment Health / Search so the
 // currently-open customer's unsaved edits are reflected without a re-save.
 const FEEDBACK_TREND_TYPES = ['ms-feedback','ms-feature-request','ms-friction'];
+const FT_DATE_FILTERS = [
+  {key:'all', label:'All feedback'},
+  {key:'30d', label:'Past 30 days'},
+  {key:'ytd', label:'YTD'}
+];
 let ftExpanded = {};
+let ftDateFilter = 'all';
+
+function ftCutoffDate(){
+  if(ftDateFilter === '30d') return addDaysToStr(nycTodayStr(), -30);
+  if(ftDateFilter === 'ytd') return dateParts(nycTodayStr()).y+'-01-01';
+  return null;
+}
 
 async function renderFeedbackTrends(){
   const el = document.getElementById('panel-feedback-trends');
   el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading feedback…</div>';
 
+  const cutoff = ftCutoffDate();
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
   const groups = {};
@@ -1218,10 +1249,11 @@ async function renderFeedbackTrends(){
     Object.keys(s.bonusLog || {}).forEach(function(q){
       (s.bonusLog[q] || []).forEach(function(entry, idx){
         if(FEEDBACK_TREND_TYPES.indexOf(entry.msId) === -1) return;
+        if(cutoff && (!entry.date || entry.date < cutoff)) return;
         const category = (entry.category || '').trim();
-        const key = entry.msId + '||' + category;
-        if(!groups[key]) groups[key] = {key:key, msId:entry.msId, category:category, entries:[]};
-        groups[key].entries.push({customer:name, quarter:q, idx:idx, date:entry.date||'', notes:entry.notes||''});
+        const key = category || ' uncategorized';
+        if(!groups[key]) groups[key] = {key:key, category:category, entries:[]};
+        groups[key].entries.push({customer:name, quarter:q, idx:idx, date:entry.date||'', notes:entry.notes||'', msId:entry.msId});
       });
     });
   }));
@@ -1229,24 +1261,34 @@ async function renderFeedbackTrends(){
   const groupList = Object.keys(groups).map(function(k){ return groups[k]; });
   groupList.sort(function(a,b){ return b.entries.length - a.entries.length; });
 
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Feature requests and customer friction/issues logged in any customer\'s Bonus & feedback log, grouped by type and category, most frequent first. Click a group to see the individual entries. There\'s no inline editing here — to change an entry\'s wording, go to that customer\'s own Bonus & feedback log tab.</div>';
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Feedback logged in any customer\'s Bonus & feedback log, grouped by category — positive feedback, feature requests, and friction/issues about the same thing sit together — most frequent first. Click a group to see the individual entries. There\'s no inline editing here — to change an entry\'s wording, go to that customer\'s own Bonus & feedback log tab.</div>';
+
+  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'+
+    FT_DATE_FILTERS.map(function(f){ return '<button class="task-filter-btn'+(ftDateFilter===f.key?' active':'')+'" data-ft-date-filter="'+f.key+'">'+f.label+'</button>'; }).join('')+
+  '</div>';
 
   if(!groupList.length){
-    html += '<div class="row"><div class="row-body"><div class="field-text">Nothing logged yet — feature-request and friction/issue entries from any customer\'s Bonus & feedback log will show up here.</div></div></div>';
+    html += '<div class="row"><div class="row-body"><div class="field-text">Nothing logged'+(cutoff?' in this window':' yet')+' — feature-request, feedback, and friction/issue entries from any customer\'s Bonus & feedback log will show up here.</div></div></div>';
     el.innerHTML = html;
+    wireFtDateFilterButtons(el);
     return;
   }
 
   groupList.forEach(function(g){
-    const ms = MILESTONES.find(function(m){ return m.id===g.msId; });
-    const iconHtml = ms && ms.icon ? ms.icon+' ' : '';
-    const label = ms ? ms.trigger : g.msId;
     const categoryLabel = g.category || 'Uncategorized';
     const customers = Array.from(new Set(g.entries.map(function(e){ return e.customer; })));
+    const typeCounts = {};
+    g.entries.forEach(function(e){ typeCounts[e.msId] = (typeCounts[e.msId]||0) + 1; });
+    const breakdown = FEEDBACK_TREND_TYPES.map(function(id){
+      if(!typeCounts[id]) return '';
+      const ms = MILESTONES.find(function(m){ return m.id===id; });
+      return (ms.icon?ms.icon+' ':'')+ms.trigger+' ×'+typeCounts[id];
+    }).filter(Boolean).join(' &middot; ');
     const isOpen = !!ftExpanded[g.key];
     html += '<div class="ft-group">'+
       '<div class="ft-group-header" data-ft-toggle="'+escAttr(g.key)+'">'+
-        '<div><div class="ft-group-title">'+iconHtml+escAttr(label)+' — '+escAttr(categoryLabel)+'</div>'+
+        '<div><div class="ft-group-title">'+escAttr(categoryLabel)+'</div>'+
+        '<div class="ft-group-meta">'+breakdown+'</div>'+
         '<div class="ft-group-meta">'+escAttr(customers.join(', '))+'</div></div>'+
         '<div class="ft-group-count">'+g.entries.length+'</div>'+
       '</div>';
@@ -1254,7 +1296,10 @@ async function renderFeedbackTrends(){
       const sortedEntries = g.entries.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
       html += '<div class="ft-group-entries">';
       sortedEntries.forEach(function(e){
-        html += '<div class="log-item"><span>'+(e.date?escAttr(e.date)+' — ':'')+'<b>'+escAttr(e.customer)+'</b>'+
+        const ms = MILESTONES.find(function(m){ return m.id===e.msId; });
+        const iconHtml = ms && ms.icon ? ms.icon+' ' : '';
+        html += '<div class="log-item"><span>'+(e.date?escAttr(e.date)+' — ':'')+iconHtml+'<b>'+escAttr(e.customer)+'</b>'+
+          (ms ? ' <span class="tag-flex">'+escAttr(ms.trigger)+'</span>' : '')+
           (e.notes ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(e.notes)+'</span>' : '')+
           '</span><button data-ft-remove data-ft-customer="'+escAttr(e.customer)+'" data-ft-quarter="'+escAttr(e.quarter)+'" data-ft-idx="'+e.idx+'" '+(isViewerMode()?'disabled':'')+'>Remove</button></div>';
       });
@@ -1264,6 +1309,7 @@ async function renderFeedbackTrends(){
   });
 
   el.innerHTML = html;
+  wireFtDateFilterButtons(el);
 
   el.querySelectorAll('[data-ft-toggle]').forEach(function(header){
     header.addEventListener('click', function(){
@@ -1287,6 +1333,14 @@ async function renderFeedbackTrends(){
         s.bonusLog[q].splice(idx, 1);
         await saveCustomerState(customer, s);
       }
+      renderFeedbackTrends();
+    });
+  });
+}
+function wireFtDateFilterButtons(el){
+  el.querySelectorAll('[data-ft-date-filter]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      ftDateFilter = btn.dataset.ftDateFilter;
       renderFeedbackTrends();
     });
   });
@@ -2839,6 +2893,39 @@ async function loadCustomersList(){
 async function saveCustomersList(list){
   try{ await window.storage.set('pep-customers', JSON.stringify(list)); }catch(e){}
 }
+async function loadCustomFeedbackCategories(){
+  try{ const res = await window.storage.get('pep-custom-feedback-categories'); return res ? JSON.parse(res.value) : []; }
+  catch(e){ return []; }
+}
+async function saveCustomFeedbackCategories(list){
+  try{ await window.storage.set('pep-custom-feedback-categories', JSON.stringify(list)); }catch(e){}
+}
+// One-time migration for custom categories typed in before this promotion
+// mechanism existed — they're sitting as free text on whatever entries
+// coined them, but never got added to the shared preset list. Scans every
+// customer's bonus log once (gated by a persisted flag so it only ever
+// runs once across everyone, not on every page load) and folds anything
+// unrecognized into the shared list.
+async function backfillCustomFeedbackCategoriesOnce(){
+  try{
+    const flag = await window.storage.get('pep-custom-feedback-categories-backfilled').catch(function(){ return null; });
+    if(flag) return;
+  }catch(e){}
+  const list = await loadCustomersList();
+  const found = new Set(CUSTOM_FEEDBACK_CATEGORIES);
+  await Promise.all(list.map(async function(name){
+    const s = await loadCustomerState(name);
+    Object.keys(s.bonusLog || {}).forEach(function(q){
+      (s.bonusLog[q] || []).forEach(function(entry){
+        const cat = (entry.category || '').trim();
+        if(cat && FEEDBACK_CATEGORIES.indexOf(cat) === -1) found.add(cat);
+      });
+    });
+  }));
+  CUSTOM_FEEDBACK_CATEGORIES = Array.from(found);
+  await saveCustomFeedbackCategories(CUSTOM_FEEDBACK_CATEGORIES);
+  await window.storage.set('pep-custom-feedback-categories-backfilled', 'true');
+}
 function customerStorageKey(name){
   const slug = (name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return 'pep-customer:'+(slug || 'customer');
@@ -3391,6 +3478,14 @@ window.pepAppInit = async function(){
   renderAll();
   const list = await loadCustomersList();
   await populateSelect(list);
+  CUSTOM_FEEDBACK_CATEGORIES = await loadCustomFeedbackCategories();
+  // Don't block startup on this one-time (per-deployment) full-customer
+  // scan — let it finish in the background and refresh the entry form if
+  // the customer happens to already be sitting on it.
+  backfillCustomFeedbackCategoriesOnce().then(function(){
+    const activeTab = document.querySelector('.tab.active');
+    if(activeTab && activeTab.dataset.panel === 'milestones') renderMilestones();
+  });
   // All Customers is the default active panel now, but renderAll() doesn't
   // render it (it's only ever rendered on-demand via the tab click handler).
   await renderLeaderboard();
