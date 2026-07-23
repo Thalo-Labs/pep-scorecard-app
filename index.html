@@ -1126,11 +1126,14 @@ function severityTierLabel(tier){
   if(tier === '72+') return '72h+';
   return 'under 12h';
 }
-// Deduction locks in on end_time (resolution) and is attributed to the
-// quarter it resolves in, same tenure-quarter bucketing bonusLog already
-// uses (month/year anchored to that customer's own sign date) — not a
-// calendar quarter, so it composes with the rest of the scoring model
-// instead of introducing a second, incompatible quarter system.
+// Currently unused by the score math (downtime is a flag only, for now —
+// see renderDowntime()'s intro copy). Kept intact, not wired into
+// renderScorecard()/renderLeaderboard(), so re-enabling scoring later is
+// just re-adding the call sites, not rebuilding this. Deduction would lock
+// in on end_time (resolution) and attribute to the quarter it resolves in,
+// same tenure-quarter bucketing bonusLog already uses (month/year anchored
+// to that customer's own sign date) — not a calendar quarter, so it
+// composes with the rest of the scoring model.
 function downtimeDeductionForQuarter(year, q){
   const events = (state.downtimeEvents || []).filter(function(e){
     return e.status === 'resolved' && quarterForMonth(e.month) === q && (e.year||1) === year;
@@ -1143,7 +1146,7 @@ let editingDowntimeKey = null;
 
 function renderDowntime(){
   const el = document.getElementById('panel-downtime');
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Log equipment downtime as it\'s detected or resolved. Under 12 hours isn\'t scored but is still logged for the record. 12–24h is –3, 24–72h is –5, over 72h is –8, capped at –15 per quarter — the deduction locks in once you set an end time, attributed to whichever quarter it resolves in.</div>';
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Log equipment downtime as it\'s detected or resolved. This is a status flag only for now — it doesn\'t affect quarterly scoring.</div>';
 
   if(currentCustomer){
     const qInfo = currentQuarterInfo(state.info.contracts);
@@ -1190,11 +1193,9 @@ function renderDowntime(){
       let scoreHtml;
       if(e.status==='ongoing'){
         const elapsedH = e.startTime ? Math.max(0,(Date.now()-new Date(e.startTime).getTime())/3600000) : null;
-        scoreHtml = elapsedH!==null ? ' — <span class="no-pts-badge">'+Math.round(elapsedH)+'h so far, not yet scored</span>' : '';
-      } else if(e.severityTier === 'none'){
-        scoreHtml = ' — <span class="no-pts-badge">🔕 '+Math.round(e.durationHours*10)/10+'h, under 12h — not scored</span>';
+        scoreHtml = elapsedH!==null ? ' — <span class="no-pts-badge">'+Math.round(elapsedH)+'h so far</span>' : '';
       } else {
-        scoreHtml = ' — <b>'+Math.round(e.durationHours*10)/10+'h ('+severityTierLabel(e.severityTier)+') — −'+e.pointsDeducted+' pts</b>';
+        scoreHtml = ' — <span class="no-pts-badge">'+Math.round(e.durationHours*10)/10+'h ('+severityTierLabel(e.severityTier)+')</span>';
       }
       html += '<div class="log-item"><span>'+(e.sensorKitId?'<b>'+escAttr(e.sensorKitId)+'</b> — ':'')+escAttr(e.equipmentName||'(unnamed equipment)')+'<br>'+whenRange+scoreHtml+
         ' <span class="tag-flex">'+(e.source==='slack-digest'?'AUTO':'MANUAL')+'</span>'+
@@ -1229,7 +1230,7 @@ function renderDowntime(){
     const isOngoing = ongoingCheckbox.checked;
     if(!kitVal){ flashSaveStatus('add the sensor kit ID'); return; }
     if(!equipVal){ flashSaveStatus('add the equipment name'); return; }
-    if(!startVal){ flashSaveStatus('pick when it started'); return; }
+    if(!startVal){ flashSaveStatus('pick when it started — needs both a date and a time'); return; }
     const cs = contractSummary(state.info.contracts);
     if(!cs.firstSigned){ flashSaveStatus('set a contract sign date first'); return; }
 
@@ -1238,7 +1239,7 @@ function renderDowntime(){
       payload = {sensorKitId:kitVal, equipmentName:equipVal, startTime:startVal, endTime:'', status:'ongoing', cause:causeInput.value.trim(), source:'manual', durationHours:null, severityTier:null, pointsDeducted:0, month:null, year:null};
     } else {
       const endVal = endInput.value;
-      if(!endVal){ flashSaveStatus('pick when it ended, or check "Still ongoing"'); return; }
+      if(!endVal){ flashSaveStatus('pick when it ended (needs both a date and a time), or check "Still ongoing"'); return; }
       const durationHours = (new Date(endVal).getTime() - new Date(startVal).getTime()) / 3600000;
       if(!(durationHours > 0)){ flashSaveStatus('end time must be after start time'); return; }
       const month = monthNumberForDate(endVal.slice(0,10), cs.firstSigned);
@@ -1333,8 +1334,7 @@ function renderActivity(){
     const assetLabel = e.equipmentName || e.sensorKitId || 'equipment';
     entries.push({date:e.startTime, label:'Downtime started — '+assetLabel, detail:(e.sensorKitId?e.sensorKitId+(e.cause?' — '+e.cause:''):e.cause||''), tag:'Downtime', icon:'🔴'});
     if(e.status==='resolved' && e.endTime){
-      const scoreText = e.severityTier==='none' ? 'under 12h, not scored' : ('−'+e.pointsDeducted+' pts, '+severityTierLabel(e.severityTier));
-      entries.push({date:e.endTime, label:'Downtime resolved — '+assetLabel, detail:Math.round(e.durationHours*10)/10+'h — '+scoreText, tag:'Downtime', icon:'🔴'});
+      entries.push({date:e.endTime, label:'Downtime resolved — '+assetLabel, detail:Math.round(e.durationHours*10)/10+'h ('+severityTierLabel(e.severityTier)+')', tag:'Downtime', icon:'🔴'});
     }
   });
 
@@ -1914,8 +1914,7 @@ function renderScorecard(){
   const bonusSplit = splitBonusForQuarter(selectedYear, selectedQuarter);
   const scoredBonus = scoredBonusForQuarter(selectedYear, selectedQuarter);
   const bonusCap = bonusCapForQuarter(selectedYear, selectedQuarter);
-  const downtimeDeduction = downtimeDeductionForQuarter(selectedYear, selectedQuarter);
-  const total = Math.max(0, del + scoredBonus - downtimeDeduction);
+  const total = del + scoredBonus;
   const maxDel = maxDeliveryForQuarter(selectedYear, selectedQuarter);
   const effMax = effectiveMaxForQuarter(selectedYear, selectedQuarter);
   const pct = effMax > 0 ? Math.round((total/effMax)*100) : 0;
@@ -1951,8 +1950,6 @@ function renderScorecard(){
         (bonusSplit.major>0 ? '<div class="cap-note" style="margin-top:2px;">+'+bonusSplit.major+' from major wins — counts in full</div>' : '')+
         '<div class="cap-note">+'+bonusSplit.minor+' from minor signals — counts up to '+bonusCap+' toward score</div>'+
       '</div>'+
-      (downtimeDeduction>0 ? '<div class="score-block"><div class="lbl">Downtime deduction</div><div class="val" style="color:var(--t-warmup);">−'+downtimeDeduction+'</div>'+
-        '<div class="cap-note">capped at −15 per quarter</div></div>' : '')+
       '<div class="score-block"><div class="lbl">% of quarter max</div><div class="val">'+pct+'%</div></div>'+
       '<div class="score-block"><div class="lbl">Tier</div><span class="tier-badge" style="background:'+tier.color+'">'+tier.label+'</span></div>'+
     '</div>'+
@@ -1964,20 +1961,17 @@ function renderScorecard(){
   });
   html += '</tbody></table>';
 
-  html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Downtime</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
+  html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
   Object.keys(QUARTER_LABEL).forEach(function(q){
     const d = deliveryPointsForQuarter(selectedYear, q);
     const b = bonusPointsForQuarter(selectedYear, q);
     const sb = scoredBonusForQuarter(selectedYear, q);
     const m = maxDeliveryForQuarter(selectedYear, q);
     const em = effectiveMaxForQuarter(selectedYear, q);
-    const dd = downtimeDeductionForQuarter(selectedYear, q);
-    const t = Math.max(0, d + sb - dd);
+    const t = d + sb;
     const p = em > 0 ? Math.round((t/em)*100) : 0;
     const tq = tierFor(p);
-    html += '<tr><td>'+yearLabel+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+sb+(b>sb?' <span style="color:var(--ink-soft);">(of +'+b+' logged)</span>':'')+'</td>'+
-      '<td class="num">'+(dd>0?'<span style="color:var(--t-warmup);">−'+dd+'</span>':'—')+'</td>'+
-      '<td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
+    html += '<tr><td>'+yearLabel+QUARTER_LABEL[q]+'</td><td class="num">'+d+' / '+m+'</td><td class="num">+'+sb+(b>sb?' <span style="color:var(--ink-soft);">(of +'+b+' logged)</span>':'')+'</td><td class="num">'+t+'</td><td class="num">'+p+'%</td><td><span class="tier-badge" style="background:'+tq.color+';font-size:9.5px;padding:3px 8px;">'+tq.label+'</span></td></tr>';
   });
   html += '</tbody></table>';
 
@@ -2531,10 +2525,9 @@ async function renderLeaderboard(){
     const sb = scoringQ ? scoredBonusForQuarter(scoringYear, scoringQ) : 0;
     const m = scoringQ ? maxDeliveryForQuarter(scoringYear, scoringQ) : 0;
     const em = scoringQ ? effectiveMaxForQuarter(scoringYear, scoringQ) : 0;
-    const dd = scoringQ ? downtimeDeductionForQuarter(scoringYear, scoringQ) : 0;
     const lastWin = lastWinInfo(s.bonusLog || {});
     state = savedState;
-    const total = Math.max(0, d + sb - dd);
+    const total = d + sb;
     const pct = em > 0 ? Math.round((total/em)*100) : 0;
     const tier = tierFor(pct);
     const cs = contractSummary(s.info.contracts);
@@ -2544,7 +2537,7 @@ async function renderLeaderboard(){
     const tosContract = overarchingTosContract(s.info.contracts);
     const overarchingDocTypeLabelStr = overarchingDocTypeLabel(tosContract);
     const ongoingDowntimeEvents = (s.downtimeEvents || []).filter(function(e){ return e.status === 'ongoing'; });
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr, tosContractUrl:(tosContract&&tosContract.contractUrl)||'', downtimeDeduction:dd, ongoingDowntimeEvents:ongoingDowntimeEvents};
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr, tosContractUrl:(tosContract&&tosContract.contractUrl)||'', ongoingDowntimeEvents:ongoingDowntimeEvents};
   }));
 
   const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
