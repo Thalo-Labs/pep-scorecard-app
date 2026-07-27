@@ -313,6 +313,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
     <div class="tab active" data-panel="leaderboard">All customers</div>
     <div class="tab" data-panel="deployment-health">Deployment Health</div>
     <div class="tab" data-panel="feedback-trends">Feedback trends</div>
+    <div class="tab" data-panel="all-activity">All activity</div>
     <div class="tab" data-panel="tasks">Tasks &amp; alerts</div>
     <span class="tab-divider"></span>
     <div class="tab" data-panel="cadence">Fixed cadence</div>
@@ -336,6 +337,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   <div class="panel active" id="panel-leaderboard"></div>
   <div class="panel" id="panel-deployment-health"></div>
   <div class="panel" id="panel-feedback-trends"></div>
+  <div class="panel" id="panel-all-activity"></div>
   <div class="panel" id="panel-tasks"></div>
   <div class="panel" id="panel-search"></div>
 
@@ -1290,37 +1292,37 @@ function renderDowntime(){
 // Bonus log — into one chronological timeline. The "log a meeting" form
 // here writes into the same bonusLog under ms-meeting, so it shows up in
 // the Bonus log tab too; this tab doesn't keep its own separate storage.
-function renderActivity(){
-  const el = document.getElementById('panel-activity');
-  if(!currentCustomer){
-    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">Pick or add a customer above to see its activity timeline.</div></div></div>';
-    return;
-  }
-
+// Pulls every dated thing a customer has on file — the fixed-cadence
+// meeting dates, every contract's dates, everything logged in the Bonus
+// log, and downtime events — into one chronological entries array. Shared
+// by the per-customer Activity tab and the cross-customer All activity tab
+// so both stay in sync with what actually counts as "activity".
+function buildActivityEntries(s){
   const entries = [];
   function addEntry(date, label, detail){
     if(!date) return;
     entries.push({date:date, label:label, detail:detail||''});
   }
 
-  addEntry(state.info.onboardingMeetingDate, 'Onboarding meeting');
-  addEntry(state.info.firstFlagDate, 'First flag');
-  addEntry(state.info.checkinDate, 'Post-install check-in meeting');
-  addEntry(state.info.survey1SentDate, 'Survey #1 sent', state.info.survey1SupportScore ? 'Supported by Thalo: '+state.info.survey1SupportScore+'/5' : '');
+  addEntry(s.info.onboardingMeetingDate, 'Onboarding meeting');
+  addEntry(s.info.firstFlagDate, 'First flag');
+  addEntry(s.info.checkinDate, 'Post-install check-in meeting');
+  addEntry(s.info.survey1SentDate, 'Survey #1 sent', s.info.survey1SupportScore ? 'Supported by Thalo: '+s.info.survey1SupportScore+'/5' : '');
 
-  const contracts = state.info.contracts || [];
+  const contracts = s.info.contracts || [];
   contracts.forEach(function(c, i){
     const n = contracts.length > 1 ? ' '+(i+1) : '';
-    addEntry(c.signDate, 'Contract'+n+' signed');
-    addEntry(c.shippedDate, 'Contract'+n+' shipped');
-    addEntry(c.installDate, 'Contract'+n+' installed');
-    addEntry(c.expectedDelivery, 'Contract'+n+' — expected delivery');
-    addEntry(c.actualDelivery, 'Contract'+n+' — actual delivery');
-    addEntry(c.expirationDate, 'Contract'+n+' expires');
+    const units = contractUnitsLabel(c);
+    addEntry(c.signDate, 'Contract'+n+' signed', units);
+    addEntry(c.shippedDate, 'Contract'+n+' shipped', units);
+    addEntry(c.installDate, 'Contract'+n+' installed', units);
+    addEntry(c.expectedDelivery, 'Contract'+n+' — expected delivery', units);
+    addEntry(c.actualDelivery, 'Contract'+n+' — actual delivery', units);
+    addEntry(c.expirationDate, 'Contract'+n+' expires', units);
   });
 
-  Object.keys(state.bonusLog).forEach(function(q){
-    (state.bonusLog[q] || []).forEach(function(entry, idx){
+  Object.keys(s.bonusLog).forEach(function(q){
+    (s.bonusLog[q] || []).forEach(function(entry, idx){
       if(!entry.date) return;
       const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
       entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, icon:ms&&ms.icon?ms.icon:'', category:entry.category||'', tag:'Bonus & feedback log', removeKey:q+':'+idx});
@@ -1329,7 +1331,7 @@ function renderActivity(){
 
   // Downtime isn't editable/removable from here — that stays on the
   // Downtime tab — this is a read-only view into the same timeline.
-  (state.downtimeEvents || []).forEach(function(e){
+  (s.downtimeEvents || []).forEach(function(e){
     if(!e.startTime) return;
     const assetLabel = e.equipmentName || e.sensorKitId || 'equipment';
     entries.push({date:e.startTime, label:'Downtime started — '+assetLabel, detail:(e.sensorKitId?e.sensorKitId+(e.cause?' — '+e.cause:''):e.cause||''), tag:'Downtime', icon:'🔴'});
@@ -1339,8 +1341,19 @@ function renderActivity(){
   });
 
   entries.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  return entries;
+}
 
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus & feedback log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings.</div>';
+function renderActivity(){
+  const el = document.getElementById('panel-activity');
+  if(!currentCustomer){
+    el.innerHTML = '<div class="row"><div class="row-body"><div class="field-text">Pick or add a customer above to see its activity timeline.</div></div></div>';
+    return;
+  }
+
+  const entries = buildActivityEntries(state);
+
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus & feedback log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings. See the <b>All activity</b> tab for every customer\'s timeline in one place.</div>';
 
   html += '<div class="bonus-row" style="align-items:end;flex-wrap:wrap;">'+
     '<div class="bonus-info" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;flex:1;">'+
@@ -1535,6 +1548,97 @@ function wireFtDateFilterButtons(el){
     btn.addEventListener('click', function(){
       ftDateFilter = btn.dataset.ftDateFilter;
       renderFeedbackTrends();
+    });
+  });
+}
+
+// Cross-customer version of the Activity tab — same buildActivityEntries()
+// timeline per customer, merged into one feed and sorted newest-first since
+// this is meant to be skimmed like a log, not read start-to-finish like a
+// single customer's history. Reuses the same load-live-or-fetch pattern as
+// Feedback trends.
+const AA_DATE_FILTERS = [
+  {key:'all', label:'All activity'},
+  {key:'30d', label:'Past 30 days'},
+  {key:'ytd', label:'YTD'}
+];
+let aaDateFilter = 'all';
+
+function aaCutoffDate(){
+  if(aaDateFilter === '30d') return addDaysToStr(nycTodayStr(), -30);
+  if(aaDateFilter === 'ytd') return dateParts(nycTodayStr()).y+'-01-01';
+  return null;
+}
+
+async function renderAllActivity(){
+  const el = document.getElementById('panel-all-activity');
+  el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading activity…</div>';
+
+  const cutoff = aaCutoffDate();
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  let entries = [];
+  await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    buildActivityEntries(s).forEach(function(e){
+      if(cutoff && e.date < cutoff) return;
+      entries.push(Object.assign({}, e, {customer:name}));
+    });
+  }));
+
+  entries.sort(function(a,b){ return b.date.localeCompare(a.date); });
+
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity across every customer, newest first — set-cadence meeting dates, contract dates, downtime, and everything logged in each customer\'s Bonus &amp; feedback log. To log a one-off meeting or edit an entry\'s wording, go to that customer\'s own Activity or Bonus &amp; feedback log tab.</div>';
+
+  html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'+
+    AA_DATE_FILTERS.map(function(f){ return '<button class="task-filter-btn'+(aaDateFilter===f.key?' active':'')+'" data-aa-date-filter="'+f.key+'">'+f.label+'</button>'; }).join('')+
+  '</div>';
+
+  html += '<div class="log-list">';
+  if(!entries.length){
+    html += '<div class="row"><div class="row-body"><div class="field-text">Nothing logged'+(cutoff?' in this window':' yet')+'.</div></div></div>';
+  } else {
+    entries.forEach(function(e){
+      const ptsHtml = e.points !== undefined ? (e.points>0 ? ' — <b>+'+e.points+' pts</b>' : ' — <span class="no-pts-badge">🔕 no pts</span>') : '';
+      html += '<div class="log-item"><span>'+escAttr(e.date)+' — <b>'+escAttr(e.customer)+'</b> — '+(e.icon?e.icon+' ':'')+escAttr(e.label)+
+        ptsHtml+
+        (e.category ? ' <span class="tag-flex">'+escAttr(e.category)+'</span>' : '')+
+        (e.tag ? ' <span class="tag-flex">'+escAttr(e.tag)+'</span>' : '')+
+        (e.detail ? '<br><span class="field-text" style="margin:2px 0 0;">'+escAttr(e.detail)+'</span>' : '')+
+        '</span>'+
+        (e.removeKey ? '<button data-aa-remove data-aa-customer="'+escAttr(e.customer)+'" data-aa-remove-key="'+escAttr(e.removeKey)+'" '+(isViewerMode()?'disabled':'')+'>Remove</button>' : '')+
+      '</div>';
+    });
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-aa-date-filter]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      aaDateFilter = btn.dataset.aaDateFilter;
+      renderAllActivity();
+    });
+  });
+
+  el.querySelectorAll('[data-aa-remove]').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      const customer = btn.dataset.aaCustomer;
+      const parts = btn.dataset.aaRemoveKey.split(':');
+      const q = parts[0], idx = parseInt(parts[1], 10);
+      if(customer === currentCustomer){
+        state.bonusLog[q].splice(idx, 1);
+        scheduleSave();
+        renderMilestones();
+        renderActivity();
+        renderCadence();
+        updateProgress();
+      } else {
+        const s = await loadCustomerState(customer);
+        s.bonusLog[q].splice(idx, 1);
+        await saveCustomerState(customer, s);
+      }
+      renderAllActivity();
     });
   });
 }
@@ -3012,6 +3116,8 @@ function updateProgress(){
     line.innerHTML = 'ICP vs. Others, speed-to-value and health over time';
   } else if(active==='feedback-trends'){
     line.innerHTML = 'Feature requests and friction/issues, grouped and ranked across every customer';
+  } else if(active==='all-activity'){
+    line.innerHTML = 'Every dated activity across every customer, newest first';
   } else if(active==='tasks'){
     line.innerHTML = 'Every open task and alert, across every customer';
   } else {
@@ -3458,11 +3564,18 @@ function detectCustomer(q, names){
   return matches[0];
 }
 
-function contractLine(c){
+function contractUnits(c){
   const legacyQty = (c.quantityPro===undefined && c.quantityMax===undefined) ? (parseInt(c.quantity,10)||0) : 0;
-  const qty = (parseInt(c.quantityPro,10)||0) + (parseInt(c.quantityMax,10)||0) + legacyQty;
+  return (parseInt(c.quantityPro,10)||0) + (parseInt(c.quantityMax,10)||0) + legacyQty;
+}
+function contractUnitsLabel(c){
+  const qty = contractUnits(c);
+  return qty ? qty+' unit'+(qty===1?'':'s') : '';
+}
+function contractLine(c){
   const parts = [];
-  if(qty) parts.push(qty+' unit'+(qty===1?'':'s'));
+  const unitsLabel = contractUnitsLabel(c);
+  if(unitsLabel) parts.push(unitsLabel);
   if(c.type) parts.push(c.type);
   return parts.join(' · ') || 'no other details';
 }
@@ -3636,6 +3749,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
     if(tab.dataset.panel==='leaderboard') renderLeaderboard();
     if(tab.dataset.panel==='deployment-health') renderDeploymentHealth();
     if(tab.dataset.panel==='feedback-trends') renderFeedbackTrends();
+    if(tab.dataset.panel==='all-activity') renderAllActivity();
     if(tab.dataset.panel==='tasks') renderTasksPanel();
     if(tab.dataset.panel==='search') renderSearchPanel();
     updateProgress();
