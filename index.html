@@ -231,24 +231,24 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   <p class="sub">Every task now has its own timing-based scoring, matching your rules exactly. Milestones and customer actions log as bonus points. Add it up every quarter and the customer lands in a tier.</p>
 
   <div class="gh-bar">
-    <span id="gh-status" class="gh-status">Not connected to GitHub</span>
-    <button id="gh-settings-btn">⚙ GitHub sync</button>
+    <span id="gh-status" class="gh-status">Loading…</span>
+    <button id="gh-settings-btn">🔓 Unlock editing</button>
   </div>
 
   <div class="gh-panel" id="gh-panel" style="display:none;">
     <div class="info-header">
-      <span class="field-label" style="margin:0;">GitHub sync — data lives in Thalo-Labs/pep-scorecard-data, shared by anyone with a token</span>
-      <button id="gh-disconnect-btn">Disconnect</button>
+      <span class="field-label" style="margin:0;">Unlock editing — paste a write-scoped token for Thalo-Labs/pep-scorecard-data</span>
+      <button id="gh-disconnect-btn">Back to view-only</button>
     </div>
     <div class="gh-fields">
-      <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write for editors, contents:read for viewers"></div>
+      <div class="info-field"><label>GitHub token</label><input type="password" id="gh-pat" placeholder="fine-grained PAT, contents:write to edit"></div>
     </div>
-    <p class="gh-note">Create a fine-grained PAT at github.com/settings/tokens scoped to just the <b>Thalo-Labs/pep-scorecard-data</b> repo — <b>Contents: Read & write</b> to edit, <b>Contents: Read</b> if you only need to view. Saved only in this browser — never written to the file itself.</p>
+    <p class="gh-note">Everyone can already view this page read-only, no token needed. To edit, create a fine-grained PAT at github.com/settings/tokens scoped to just <b>Thalo-Labs/pep-scorecard-data</b> with <b>Contents: Read & write</b>. Saved only in this browser.</p>
     <div class="info-field" style="flex-direction:row;align-items:center;gap:6px;margin:10px 0;">
       <input type="checkbox" id="gh-viewer-mode" style="width:auto;">
-      <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Viewer mode — browse every tab and customer, but every editable control is disabled</label>
+      <label for="gh-viewer-mode" style="margin:0;text-transform:none;font-size:12.5px;letter-spacing:normal;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);">Stay in view-only even with this token entered</label>
     </div>
-    <button id="gh-connect-btn" class="primary">Save &amp; connect</button>
+    <button id="gh-connect-btn" class="primary">Unlock editing</button>
     <span id="gh-connect-status"></span>
   </div>
 
@@ -358,6 +358,17 @@ const GH_REPO = 'pep-scorecard-data';
 const GH_PATH = 'data/pep-scorecard.json';
 const GH = {owner:GH_OWNER, repo:GH_REPO, path:GH_PATH, pat:'', sha:null, cache:null};
 const GH_CONFIG_KEY = 'pep-gh-config';
+
+// Baked-in read-only PAT (viewer-pep) so anyone loading this page can view
+// without pasting a token. Scoped to Thalo-Labs/pep-scorecard-data, read
+// only — visible in page source is accepted since view access is meant to
+// be open. Editing still requires a real write-scoped PAT pasted into the
+// panel below; that one is never persisted anywhere but the browser that
+// entered it.
+const READ_ONLY_PAT = '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';
+// Bump this whenever the token above gets rotated — triggers a status-bar
+// warning once we're inside 30 days of expiry.
+const READ_ONLY_PAT_EXPIRES = '2026-10-04';
 
 function loadGhConfig(){
   try{
@@ -499,12 +510,20 @@ async function tryConnectGh(cfg, silent){
   GH.owner = GH_OWNER; GH.repo = GH_REPO; GH.path = GH_PATH; GH.pat = cfg.pat;
   GH.cache = null; GH.sha = null;
   installGithubStorageShim();
+  const isReadOnlyAuto = cfg.pat === READ_ONLY_PAT;
   try{
     const cache = await ghLoadFile();
     if(cache && Object.keys(cache).length === 0){
-      setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO+', but no data found at '+GH_PATH+'. If you expect existing customers, this token likely lacks access to the private repo (GitHub returns 404 instead of 403 for that) — double check its repository access.', 'warning');
+      setGhStatus('Connected, but no data found at '+GH_PATH+'. If you expect existing customers, this token likely lacks access to the private repo (GitHub returns 404 instead of 403 for that) — double check its repository access.', 'warning');
+    } else if(isReadOnlyAuto){
+      const daysLeft = Math.round((new Date(READ_ONLY_PAT_EXPIRES) - new Date()) / 86400000);
+      if(daysLeft <= 30){
+        setGhStatus('Viewing — read-only (viewer token expires in '+daysLeft+' day'+(daysLeft===1?'':'s')+' — rotate soon)', 'warning');
+      } else {
+        setGhStatus('Viewing — read-only', 'connected');
+      }
     } else {
-      setGhStatus('Connected — '+GH_OWNER+'/'+GH_REPO, 'connected');
+      setGhStatus('Editing unlocked — '+GH_OWNER+'/'+GH_REPO, 'connected');
     }
     document.getElementById('app-root').style.display = '';
     document.getElementById('gh-panel').style.display = 'none';
@@ -512,26 +531,31 @@ async function tryConnectGh(cfg, silent){
     return true;
   }catch(e){
     setGhStatus(e.auth ? 'GitHub auth failed, check token/permissions' : 'GitHub connection failed', 'error');
-    document.getElementById('app-root').style.display = 'none';
     if(!silent) document.getElementById('gh-connect-status').textContent = e.message;
-    window.storage = undefined;
+    if(isReadOnlyAuto){
+      document.getElementById('app-root').style.display = 'none';
+    } else {
+      await connectReadOnly();
+    }
     return false;
   }
+}
+
+async function connectReadOnly(){
+  return tryConnectGh({pat:READ_ONLY_PAT, viewerMode:true}, true);
 }
 
 document.getElementById('gh-settings-btn').addEventListener('click', function(){
   const panel = document.getElementById('gh-panel');
   panel.style.display = panel.style.display === 'none' ? '' : 'none';
 });
-document.getElementById('gh-disconnect-btn').addEventListener('click', function(){
+document.getElementById('gh-disconnect-btn').addEventListener('click', async function(){
   clearGhConfig();
-  GH.pat=''; GH.cache=null; GH.sha=null;
-  window.storage = undefined;
   document.getElementById('gh-pat').value='';
   document.getElementById('gh-viewer-mode').checked = false;
-  applyViewerMode(false);
-  document.getElementById('app-root').style.display = 'none';
-  setGhStatus('Not connected to GitHub');
+  await connectReadOnly();
+  document.getElementById('gh-panel').style.display = 'none';
+  if(window.pepAppInit) window.pepAppInit();
 });
 document.getElementById('gh-viewer-mode').addEventListener('change', function(e){
   applyViewerMode(e.target.checked);
@@ -559,12 +583,14 @@ document.getElementById('gh-connect-btn').addEventListener('click', async functi
 
 (async function initGhConnection(){
   const cfg = loadGhConfig();
+  let ok = false;
   if(cfg && cfg.pat){
     document.getElementById('gh-pat').value = cfg.pat;
     document.getElementById('gh-viewer-mode').checked = !!cfg.viewerMode;
-    const ok = await tryConnectGh(cfg, true);
-    if(ok && window.pepAppInit) window.pepAppInit();
+    ok = await tryConnectGh(cfg, true);
   }
+  if(!ok) ok = await connectReadOnly();
+  if(ok && window.pepAppInit) window.pepAppInit();
 })();
 /* ===== end GitHub sync layer ===== */
 
