@@ -3878,5 +3878,358 @@ window.pepAppInit = async function(){
   await renderLeaderboard();
 };
 </script>
+
+<style>
+  #pep-tour-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999998;
+    pointer-events: none;
+  }
+
+  #pep-tour-spotlight {
+    position: absolute;
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(17, 24, 39, 0.55);
+    transition: top 0.3s cubic-bezier(.4,0,.2,1), left 0.3s cubic-bezier(.4,0,.2,1),
+                width 0.3s cubic-bezier(.4,0,.2,1), height 0.3s cubic-bezier(.4,0,.2,1);
+    pointer-events: none;
+  }
+
+  #pep-tour-tooltip {
+    position: absolute;
+    z-index: 999999;
+    width: 320px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.08);
+    padding: 22px 22px 18px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    pointer-events: auto;
+    transition: top 0.3s cubic-bezier(.4,0,.2,1), left 0.3s cubic-bezier(.4,0,.2,1);
+    opacity: 0;
+    transform: scale(0.96);
+    animation: pepTourIn 0.25s ease forwards;
+  }
+
+  @keyframes pepTourIn {
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  #pep-tour-tooltip .pep-tour-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #2563eb);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+
+  #pep-tour-tooltip h4 {
+    margin: 0 0 6px 0;
+    font-size: 16.5px;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.01em;
+  }
+
+  #pep-tour-tooltip p {
+    margin: 0 0 16px 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #4b5563;
+  }
+
+  #pep-tour-tooltip .pep-tour-dots {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  #pep-tour-tooltip .pep-tour-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e5e7eb;
+    transition: background 0.2s, width 0.2s;
+  }
+
+  #pep-tour-tooltip .pep-tour-dot.active {
+    background: #2563eb;
+    width: 18px;
+    border-radius: 3px;
+  }
+
+  #pep-tour-tooltip .pep-tour-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  #pep-tour-tooltip button {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: inherit;
+  }
+
+  .pep-tour-skip {
+    background: transparent;
+    color: #9ca3af;
+    padding-left: 0;
+  }
+  .pep-tour-skip:hover { color: #6b7280; }
+
+  .pep-tour-back {
+    background: #f3f4f6;
+    color: #374151;
+    margin-right: 6px;
+  }
+  .pep-tour-back:hover { background: #e5e7eb; }
+
+  .pep-tour-next {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  }
+  .pep-tour-next:hover { background: linear-gradient(135deg, #2f6fe0, #1d4fd1); }
+
+  #pep-tour-replay-btn {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    z-index: 999997;
+    background: #ffffff;
+    color: #2563eb;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+    cursor: pointer;
+  }
+  #pep-tour-replay-btn:hover { background: #f8fafc; }
+</style>
+
+<script>
+(function () {
+  // ---------------------------------------------------------------
+  // Each step targets a real element on the page. Steps for the
+  // Scorecard/Activity tabs also set `activateTab` — their panels are
+  // `display:none` until that tab is clicked, so the tour switches to
+  // the tab itself before it tries to measure the panel's position.
+  // ---------------------------------------------------------------
+  const PEP_TOUR_STEPS = [
+    {
+      selector: '.tab[data-panel="leaderboard"]',
+      icon: "🏆",
+      title: "Meet your leaderboard",
+      text: "This is home base for every customer, ranked and ready to explore. Come back here anytime you want the big picture."
+    },
+    {
+      selector: '.tab[data-panel="deployment-health"]',
+      icon: "🩺",
+      title: "Keep tabs on equipment",
+      text: "See metrics across every customer in one view. It defaults to the current quarter, use the dropdown anytime to look back at historical data."
+    },
+    {
+      selector: '.tab[data-panel="feedback-trends"]',
+      icon: "💬",
+      title: "Spot the patterns",
+      text: "Feedback and friction from customers, rolled up so you can catch trends before they become problems."
+    },
+    {
+      selector: "#customer-select",
+      icon: "🔍",
+      title: "Zoom into one customer",
+      text: "Pick any customer here to jump straight to their details."
+    },
+    {
+      selector: '.tab[data-panel="scorecard"]',
+      icon: "📊",
+      title: "Scorecard",
+      text: "The full performance breakdown for this customer and where they stand this quarter. Make sure a customer is selected to view."
+    },
+    {
+      selector: '.tab[data-panel="activity"]',
+      icon: "🗂️",
+      title: "Activity",
+      text: "A timeline of everything logged for this customer, including outages, feedback, and milestones. Make sure a customer is selected to view."
+    }
+  ];
+
+  const STORAGE_KEY = "pepTourSeen";
+  let currentStep = 0;
+  let overlay, spotlight, tooltip;
+
+  function buildDom() {
+    overlay = document.createElement("div");
+    overlay.id = "pep-tour-overlay";
+
+    spotlight = document.createElement("div");
+    spotlight.id = "pep-tour-spotlight";
+    overlay.appendChild(spotlight);
+
+    tooltip = document.createElement("div");
+    tooltip.id = "pep-tour-tooltip";
+    overlay.appendChild(tooltip);
+
+    document.body.appendChild(overlay);
+  }
+
+  function teardownDom() {
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = spotlight = tooltip = null;
+  }
+
+  function positionForStep(index) {
+    const step = PEP_TOUR_STEPS[index];
+    const el = document.querySelector(step.selector);
+
+    if (!el) {
+      // Selector didn't match anything — skip straight to next step
+      // so a bad selector doesn't stall the whole tour.
+      console.warn("PEP Tour: no element found for selector:", step.selector);
+      nextStep();
+      return;
+    }
+
+    // Instant, not smooth: this page is long enough that a smooth scroll
+    // between distant steps (e.g. a tab near the bottom to the customer
+    // picker near the top) doesn't reliably finish within the measurement
+    // delay below, which left the tooltip positioned off-screen.
+    el.scrollIntoView({ behavior: "auto", block: "center" });
+
+    // Slight delay to let layout settle before measuring position.
+    setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const pad = 6;
+
+      spotlight.style.top = rect.top - pad + "px";
+      spotlight.style.left = rect.left - pad + "px";
+      spotlight.style.width = rect.width + pad * 2 + "px";
+      spotlight.style.height = rect.height + pad * 2 + "px";
+
+      tooltip.innerHTML = `
+        <div class="pep-tour-icon">${step.icon || "✨"}</div>
+        <h4>${step.title}</h4>
+        <p>${step.text}</p>
+        <div class="pep-tour-dots">
+          ${PEP_TOUR_STEPS.map((_, i) => `<div class="pep-tour-dot ${i === index ? "active" : ""}"></div>`).join("")}
+        </div>
+        <div class="pep-tour-buttons">
+          <button class="pep-tour-skip" id="pep-tour-skip">Skip</button>
+          <div>
+            ${index > 0 ? '<button class="pep-tour-back" id="pep-tour-back">Back</button>' : ""}
+            <button class="pep-tour-next" id="pep-tour-next">
+              ${index === PEP_TOUR_STEPS.length - 1 ? "Got it!" : "Next"}
+            </button>
+          </div>
+        </div>
+      `;
+
+      // position tooltip below the element by default; flip above if
+      // there isn't room at the bottom of the viewport
+      const tooltipHeight = 150;
+      let top = rect.bottom + pad + 12;
+      if (top + tooltipHeight > window.innerHeight) {
+        top = Math.max(12, rect.top - tooltipHeight - 12);
+      }
+      let left = Math.min(
+        Math.max(12, rect.left),
+        window.innerWidth - 320
+      );
+
+      tooltip.style.top = top + "px";
+      tooltip.style.left = left + "px";
+
+      document.getElementById("pep-tour-next").onclick = nextStep;
+      document.getElementById("pep-tour-skip").onclick = endTour;
+      const backBtn = document.getElementById("pep-tour-back");
+      if (backBtn) backBtn.onclick = prevStep;
+    }, 120);
+  }
+
+  function nextStep() {
+    if (currentStep >= PEP_TOUR_STEPS.length - 1) {
+      endTour();
+      return;
+    }
+    currentStep++;
+    positionForStep(currentStep);
+  }
+
+  function prevStep() {
+    if (currentStep === 0) return;
+    currentStep--;
+    positionForStep(currentStep);
+  }
+
+  function endTour() {
+    localStorage.setItem(STORAGE_KEY, "true");
+    teardownDom();
+  }
+
+  // #app-root stays `display:none` until the GitHub/viewer-proxy fetch
+  // in the main app script resolves and reveals it — that can take
+  // longer than any fixed timeout, so wait for it instead of guessing.
+  function waitForAppReady(callback) {
+    const appRoot = document.getElementById("app-root");
+    if (!appRoot || getComputedStyle(appRoot).display !== "none") {
+      callback();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (getComputedStyle(appRoot).display !== "none") {
+        observer.disconnect();
+        callback();
+      }
+    });
+    observer.observe(appRoot, { attributes: true, attributeFilter: ["style"] });
+    // Safety net in case the app never unlocks (e.g. the viewer-proxy
+    // fetch fails) so a stray observer doesn't sit around forever.
+    setTimeout(() => observer.disconnect(), 15000);
+  }
+
+  function startTour() {
+    waitForAppReady(() => {
+      currentStep = 0;
+      teardownDom(); // in case one is already open
+      buildDom();
+      positionForStep(0);
+    });
+  }
+
+  function addReplayButton() {
+    if (document.getElementById("pep-tour-replay-btn")) return;
+    const btn = document.createElement("button");
+    btn.id = "pep-tour-replay-btn";
+    btn.textContent = "Tour";
+    btn.onclick = startTour;
+    document.body.appendChild(btn);
+  }
+
+  // Reposition tooltip/spotlight on resize while tour is open
+  window.addEventListener("resize", () => {
+    if (overlay) positionForStep(currentStep);
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    addReplayButton();
+    if (!localStorage.getItem(STORAGE_KEY)) {
+      // small delay so the rest of the page (tabs, data) has rendered
+      setTimeout(startTour, 600);
+    }
+  });
+})();
+</script>
 </body>
 </html>
