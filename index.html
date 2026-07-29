@@ -359,16 +359,36 @@ const GH_PATH = 'data/pep-scorecard.json';
 const GH = {owner:GH_OWNER, repo:GH_REPO, path:GH_PATH, pat:'', sha:null, cache:null};
 const GH_CONFIG_KEY = 'pep-gh-config';
 
-// Baked-in read-only PAT (viewer-pep) so anyone loading this page can view
-// without pasting a token. Scoped to Thalo-Labs/pep-scorecard-data, read
-// only — visible in page source is accepted since view access is meant to
-// be open. Editing still requires a real write-scoped PAT pasted into the
-// panel below; that one is never persisted anywhere but the browser that
-// entered it.
-const READ_ONLY_PAT = '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';
-// Bump this whenever the token above gets rotated — triggers a status-bar
-// warning once we're inside 30 days of expiry.
-const READ_ONLY_PAT_EXPIRES = '2026-10-04';
+// Cloudflare Worker that proxies read-only access to the PEP Scorecard
+// data file. The real GitHub PAT lives as a secret on the Worker, never in
+// this file — so it can't be caught by GitHub's secret scanning and never
+// needs rotating here. Replace with the Worker's actual URL once deployed.
+const VIEWER_PROXY_URL = 'https://pep-scorecard-viewer-proxy.thalolabs.workers.dev/';
+
+function installReadOnlyProxyShim(){
+  window.storage = {
+    get: async function(key){
+      const res = await fetch(VIEWER_PROXY_URL);
+      if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
+      const cache = await res.json();
+      if(!(key in cache)){ const e = new Error('not found'); throw e; }
+      return {key:key, value:cache[key]};
+    },
+    set: async function(){
+      throw new Error('read-only viewer session — unlock editing to make changes');
+    },
+    delete: async function(){
+      throw new Error('read-only viewer session — unlock editing to make changes');
+    },
+    list: async function(prefix){
+      const res = await fetch(VIEWER_PROXY_URL);
+      if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
+      const cache = await res.json();
+      const keys = Object.keys(cache).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
+      return {keys:keys};
+    }
+  };
+}
 
 function loadGhConfig(){
   try{
@@ -510,18 +530,10 @@ async function tryConnectGh(cfg, silent){
   GH.owner = GH_OWNER; GH.repo = GH_REPO; GH.path = GH_PATH; GH.pat = cfg.pat;
   GH.cache = null; GH.sha = null;
   installGithubStorageShim();
-  const isReadOnlyAuto = cfg.pat === READ_ONLY_PAT;
   try{
     const cache = await ghLoadFile();
     if(cache && Object.keys(cache).length === 0){
       setGhStatus('Connected, but no data found at '+GH_PATH+'. If you expect existing customers, this token likely lacks access to the private repo (GitHub returns 404 instead of 403 for that) — double check its repository access.', 'warning');
-    } else if(isReadOnlyAuto){
-      const daysLeft = Math.round((new Date(READ_ONLY_PAT_EXPIRES) - new Date()) / 86400000);
-      if(daysLeft <= 30){
-        setGhStatus('Viewing — read-only (viewer token expires in '+daysLeft+' day'+(daysLeft===1?'':'s')+' — rotate soon)', 'warning');
-      } else {
-        setGhStatus('Viewing — read-only', 'connected');
-      }
     } else {
       setGhStatus('Editing unlocked — '+GH_OWNER+'/'+GH_REPO, 'connected');
     }
@@ -532,17 +544,25 @@ async function tryConnectGh(cfg, silent){
   }catch(e){
     setGhStatus(e.auth ? 'GitHub auth failed, check token/permissions' : 'GitHub connection failed', 'error');
     if(!silent) document.getElementById('gh-connect-status').textContent = e.message;
-    if(isReadOnlyAuto){
-      document.getElementById('app-root').style.display = 'none';
-    } else {
-      await connectReadOnly();
-    }
+    await connectReadOnly();
     return false;
   }
 }
 
 async function connectReadOnly(){
-  return tryConnectGh({pat:READ_ONLY_PAT, viewerMode:true}, true);
+  installReadOnlyProxyShim();
+  try{
+    const listRes = await window.storage.list();
+    setGhStatus(listRes.keys.length ? 'Viewing — read-only' : 'Viewing — read-only (no data found yet)', 'connected');
+    document.getElementById('app-root').style.display = '';
+    document.getElementById('gh-panel').style.display = 'none';
+    applyViewerMode(true);
+    return true;
+  }catch(e){
+    setGhStatus('Viewer connection failed', 'error');
+    document.getElementById('app-root').style.display = 'none';
+    return false;
+  }
 }
 
 document.getElementById('gh-settings-btn').addEventListener('click', function(){
