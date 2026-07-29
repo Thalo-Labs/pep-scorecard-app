@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>PEP Scorecard — Year One (Internal)</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
@@ -222,9 +223,28 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .dt-detail-row td{background:#FAFAF7;padding:8px 12px;font-size:11.5px;color:var(--ink-soft);}
 .dt-detail-row .dt-asset-line{margin-bottom:4px;}
 .dt-detail-row .dt-asset-line:last-child{margin-bottom:0;}
+
+.wrap{display:none;}
+body.gh-authed .wrap{display:block;}
+.google-gate{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9999;padding:24px;text-align:center;}
+body.gh-authed .google-gate{display:none;}
+.google-gate .eyebrow{margin-bottom:0;}
+.google-gate-note{font-size:12px;color:var(--ink-soft);max-width:340px;line-height:1.5;}
+.google-gate-note.error{color:var(--t-warmup);}
 </style>
 </head>
 <body>
+<div class="google-gate" id="google-gate">
+  <div class="eyebrow">PEP Scorecard — Year One (Internal)</div>
+  <div id="g_id_onload"
+       data-client_id="1039374292452-idmh03rmnghe254c15lk8iuob9rscjn4.apps.googleusercontent.com"
+       data-callback="handleGoogleCredential"
+       data-hd="thalolabs.com"
+       data-auto_prompt="false">
+  </div>
+  <div class="g_id_signin" data-type="standard" data-theme="outline" data-size="large" data-text="signin_with"></div>
+  <p class="google-gate-note" id="google-gate-status">Sign in with a @thalolabs.com account to continue.</p>
+</div>
 <div class="wrap">
 
   <h1>Partnership Experience Playbook — Internal</h1>
@@ -348,6 +368,71 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 </div>
 
 <script>
+/* ===== Google sign-in gate =====
+   Client-side only: gates the .wrap content behind Sign in with Google,
+   restricted to @thalolabs.com accounts. This is a UX gate, not a security
+   boundary — the read-only viewer proxy and GitHub API calls below aren't
+   aware of it, so anyone who can reach those directly still can. */
+
+const GOOGLE_ALLOWED_DOMAIN = 'thalolabs.com';
+const GOOGLE_AUTH_KEY = 'pep-google-auth';
+
+function b64UrlToJson(b64url){
+  const b64 = b64url.replace(/-/g,'+').replace(/_/g,'/');
+  return JSON.parse(decodeURIComponent(escape(atob(b64))));
+}
+function decodeGoogleCredential(jwt){
+  const parts = jwt.split('.');
+  if(parts.length !== 3) throw new Error('malformed credential');
+  return b64UrlToJson(parts[1]);
+}
+function saveGoogleAuth(payload){
+  try{ sessionStorage.setItem(GOOGLE_AUTH_KEY, JSON.stringify({email:payload.email, exp:payload.exp})); }catch(e){}
+}
+function loadGoogleAuth(){
+  try{
+    const raw = sessionStorage.getItem(GOOGLE_AUTH_KEY);
+    if(!raw) return null;
+    const auth = JSON.parse(raw);
+    if(!auth.exp || auth.exp * 1000 < Date.now()) return null;
+    return auth;
+  }catch(e){ return null; }
+}
+function setGoogleGateStatus(msg, isError){
+  const el = document.getElementById('google-gate-status');
+  if(!el) return;
+  el.textContent = msg;
+  el.className = 'google-gate-note'+(isError?' error':'');
+}
+function enterApp(){
+  document.body.classList.add('gh-authed');
+}
+
+function handleGoogleCredential(response){
+  let payload;
+  try{
+    payload = decodeGoogleCredential(response.credential);
+  }catch(e){
+    setGoogleGateStatus('Could not read the Google sign-in response. Try again.', true);
+    return;
+  }
+  const email = payload.email || '';
+  const hd = payload.hd || email.split('@')[1] || '';
+  if(!payload.email_verified || hd.toLowerCase() !== GOOGLE_ALLOWED_DOMAIN){
+    setGoogleGateStatus('Access restricted to @'+GOOGLE_ALLOWED_DOMAIN+' accounts (signed in as '+(email || 'unknown')+').', true);
+    if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+    return;
+  }
+  saveGoogleAuth(payload);
+  setGoogleGateStatus('');
+  enterApp();
+}
+
+(function initGoogleGate(){
+  if(loadGoogleAuth()) enterApp();
+})();
+/* ===== end Google sign-in gate ===== */
+
 /* ===== GitHub sync layer =====
    Replaces the Claude-artifact window.storage API with a shim backed by
    a single JSON file in a GitHub repo, read/written via the Contents API.
