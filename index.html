@@ -365,14 +365,18 @@ const GH_CONFIG_KEY = 'pep-gh-config';
 // needs rotating here. Replace with the Worker's actual URL once deployed.
 const VIEWER_PROXY_URL = 'https://pep-scorecard-viewer-proxy.thalolabs.workers.dev/';
 
+let readOnlyProxyCache = null;
+
 function installReadOnlyProxyShim(){
   window.storage = {
     get: async function(key){
-      const res = await fetch(VIEWER_PROXY_URL);
-      if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
-      const cache = await res.json();
-      if(!(key in cache)){ const e = new Error('not found'); throw e; }
-      return {key:key, value:cache[key]};
+      if(!readOnlyProxyCache){
+        const res = await fetch(VIEWER_PROXY_URL);
+        if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
+        readOnlyProxyCache = await res.json();
+      }
+      if(!(key in readOnlyProxyCache)){ const e = new Error('not found'); throw e; }
+      return {key:key, value:readOnlyProxyCache[key]};
     },
     set: async function(){
       throw new Error('read-only viewer session — unlock editing to make changes');
@@ -381,10 +385,12 @@ function installReadOnlyProxyShim(){
       throw new Error('read-only viewer session — unlock editing to make changes');
     },
     list: async function(prefix){
-      const res = await fetch(VIEWER_PROXY_URL);
-      if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
-      const cache = await res.json();
-      const keys = Object.keys(cache).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
+      if(!readOnlyProxyCache){
+        const res = await fetch(VIEWER_PROXY_URL);
+        if(!res.ok) throw new Error('viewer proxy failed ('+res.status+')');
+        readOnlyProxyCache = await res.json();
+      }
+      const keys = Object.keys(readOnlyProxyCache).filter(function(k){ return !prefix || k.indexOf(prefix)===0; });
       return {keys:keys};
     }
   };
