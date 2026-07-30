@@ -1368,8 +1368,11 @@ function buildActivityEntries(s){
     addEntry(c.signDate, 'Contract'+n+' signed', units);
     addEntry(c.shippedDate, 'Contract'+n+' shipped', units);
     addEntry(c.installDate, 'Contract'+n+' installed', units);
-    addEntry(c.expectedDelivery, 'Contract'+n+' — expected delivery', units);
-    addEntry(c.actualDelivery, 'Contract'+n+' — actual delivery', units);
+    if(c.actualDelivery){
+      addEntry(c.actualDelivery, 'Contract'+n+' — actual delivery', units);
+    } else {
+      addEntry(c.expectedDelivery, 'Contract'+n+' — expected delivery', units);
+    }
     addEntry(c.expirationDate, 'Contract'+n+' expires', units);
   });
 
