@@ -2101,9 +2101,12 @@ function hasActiveContract(contracts){
 // only partially shipped (some sensor kits out, some still on order --
 // manually confirmed via the "partially shipped" checkbox once a ship date
 // exists, since there's no per-unit shipped-quantity tracking to infer it
-// from). Independent of tier/score, same as No contract.
+// from). Independent of tier/score, same as No contract. A 0-unit contract
+// (an MSA or other paperwork-only doc row) never ships anything, so it's
+// excluded -- otherwise every customer with a Terms-of-Service row and no
+// shipped date on it would show as permanently awaiting shipment.
 function hasAwaitingShipment(contracts){
-  return (contracts||[]).some(function(c){ return (c.signDate && !c.shippedDate) || c.partiallyShipped; });
+  return (contracts||[]).some(function(c){ return contractUnits(c)>0 && ((c.signDate && !c.shippedDate) || c.partiallyShipped); });
 }
 
 function renderScorecard(){
