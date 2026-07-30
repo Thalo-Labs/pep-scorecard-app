@@ -1392,9 +1392,11 @@ function buildActivityEntries(s){
     }
   });
 
-  entries.sort(function(a,b){ return a.date.localeCompare(b.date); });
+  entries.sort(function(a,b){ return b.date.localeCompare(a.date); });
   return entries;
 }
+
+let activitySortOrder = 'desc';
 
 function renderActivity(){
   const el = document.getElementById('panel-activity');
@@ -1404,6 +1406,7 @@ function renderActivity(){
   }
 
   const entries = buildActivityEntries(state);
+  if(activitySortOrder === 'asc') entries.reverse();
 
   let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity for '+escAttr(currentCustomer)+' in one timeline — set-cadence meeting dates, contract dates, and everything logged in the Bonus & feedback log. Log a one-off meeting below if it isn’t one of the fixed cadence meetings. See the <b>All activity</b> tab for every customer\'s timeline in one place.</div>';
 
@@ -1415,7 +1418,12 @@ function renderActivity(){
     '<div class="bonus-add"><button id="activity-meeting-add-btn" '+(isViewerMode()?'disabled':'')+'>+ Log meeting</button></div>'+
   '</div>';
 
-  html += '<div class="log-list" style="margin-top:14px;">';
+  html += '<div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">'+
+    '<button class="task-filter-btn'+(activitySortOrder==='desc'?' active':'')+'" data-activity-sort="desc">Newest first</button>'+
+    '<button class="task-filter-btn'+(activitySortOrder==='asc'?' active':'')+'" data-activity-sort="asc">Oldest first</button>'+
+  '</div>';
+
+  html += '<div class="log-list">';
   if(!entries.length){
     html += '<div class="field-text" style="color:var(--ink-soft);">Nothing dated yet.</div>';
   } else {
@@ -1434,6 +1442,13 @@ function renderActivity(){
   html += '</div>';
 
   el.innerHTML = html;
+
+  el.querySelectorAll('[data-activity-sort]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      activitySortOrder = btn.dataset.activitySort;
+      renderActivity();
+    });
+  });
 
   const addBtn = document.getElementById('activity-meeting-add-btn');
   if(addBtn) addBtn.addEventListener('click', function(){
@@ -1499,6 +1514,7 @@ async function renderFeedbackTrends(){
   el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading feedback…</div>';
 
   const cutoff = ftCutoffDate();
+  const today = nycTodayStr();
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
   const groups = {};
@@ -1507,7 +1523,7 @@ async function renderFeedbackTrends(){
     Object.keys(s.bonusLog || {}).forEach(function(q){
       (s.bonusLog[q] || []).forEach(function(entry, idx){
         if(FEEDBACK_TREND_TYPES.indexOf(entry.msId) === -1) return;
-        if(cutoff && (!entry.date || entry.date < cutoff)) return;
+        if(cutoff && (!entry.date || entry.date < cutoff || entry.date > today)) return;
         const category = (entry.category || '').trim();
         const key = category || ' uncategorized';
         if(!groups[key]) groups[key] = {key:key, category:category, entries:[]};
@@ -1605,16 +1621,15 @@ function wireFtDateFilterButtons(el){
 }
 
 // Cross-customer version of the Activity tab — same buildActivityEntries()
-// timeline per customer, merged into one feed and sorted newest-first since
-// this is meant to be skimmed like a log, not read start-to-finish like a
-// single customer's history. Reuses the same load-live-or-fetch pattern as
-// Feedback trends.
+// timeline per customer (already newest-first), merged into one feed.
+// Reuses the same load-live-or-fetch pattern as Feedback trends.
 const AA_DATE_FILTERS = [
   {key:'all', label:'All activity'},
   {key:'30d', label:'Past 30 days'},
   {key:'ytd', label:'YTD'}
 ];
 let aaDateFilter = 'all';
+let aaSortOrder = 'desc';
 
 function aaCutoffDate(){
   if(aaDateFilter === '30d') return addDaysToStr(nycTodayStr(), -30);
@@ -1627,23 +1642,28 @@ async function renderAllActivity(){
   el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Loading activity…</div>';
 
   const cutoff = aaCutoffDate();
+  const today = nycTodayStr();
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
   let entries = [];
   await Promise.all(list.map(async function(name){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     buildActivityEntries(s).forEach(function(e){
-      if(cutoff && e.date < cutoff) return;
+      if(cutoff && (e.date < cutoff || e.date > today)) return;
       entries.push(Object.assign({}, e, {customer:name}));
     });
   }));
+  if(aaSortOrder === 'asc') entries.reverse();
 
-  entries.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity across every customer — set-cadence meeting dates, contract dates, downtime, and everything logged in each customer\'s Bonus &amp; feedback log. To log a one-off meeting or edit an entry\'s wording, go to that customer\'s own Activity or Bonus &amp; feedback log tab.</div>';
 
-  let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity across every customer, newest first — set-cadence meeting dates, contract dates, downtime, and everything logged in each customer\'s Bonus &amp; feedback log. To log a one-off meeting or edit an entry\'s wording, go to that customer\'s own Activity or Bonus &amp; feedback log tab.</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'+
+    AA_DATE_FILTERS.map(function(f){ return '<button class="task-filter-btn'+(aaDateFilter===f.key?' active':'')+'" data-aa-date-filter="'+f.key+'">'+f.label+'</button>'; }).join('')+
+  '</div>';
 
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'+
-    AA_DATE_FILTERS.map(function(f){ return '<button class="task-filter-btn'+(aaDateFilter===f.key?' active':'')+'" data-aa-date-filter="'+f.key+'">'+f.label+'</button>'; }).join('')+
+    '<button class="task-filter-btn'+(aaSortOrder==='desc'?' active':'')+'" data-aa-sort="desc">Newest first</button>'+
+    '<button class="task-filter-btn'+(aaSortOrder==='asc'?' active':'')+'" data-aa-sort="asc">Oldest first</button>'+
   '</div>';
 
   html += '<div class="log-list">';
@@ -1669,6 +1689,13 @@ async function renderAllActivity(){
   el.querySelectorAll('[data-aa-date-filter]').forEach(function(btn){
     btn.addEventListener('click', function(){
       aaDateFilter = btn.dataset.aaDateFilter;
+      renderAllActivity();
+    });
+  });
+
+  el.querySelectorAll('[data-aa-sort]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      aaSortOrder = btn.dataset.aaSort;
       renderAllActivity();
     });
   });
@@ -2026,6 +2053,22 @@ function quarterBadgeHtml(info){
   return '<span class="quarter-badge" style="background:'+QUARTER_COLOR[info.q]+';">'+yearPrefix+QUARTER_LABEL[info.q]+'</span>';
 }
 
+const QUARTER_ORDER = {q1:0, q2:1, q3:2, q4:3};
+
+// A customer only "has" a tier for a quarter once they've actually reached
+// it in their own tenure — a customer 1 quarter in shouldn't show a tier
+// (even a 0%/at-risk one) for Q2-Q4, since those quarters haven't happened
+// for them yet. qInfo is the output of currentQuarterInfo(): null (no
+// contract sign date logged at all), {special:'first30'} (still within the
+// first 30 days, cosmetically pre-Q1), or {year, q}.
+function quarterHasStarted(year, q, qInfo){
+  if(!qInfo) return false;
+  if(qInfo.special === 'first30') return year===1 && q==='q1';
+  if(year < qInfo.year) return true;
+  if(year > qInfo.year) return false;
+  return QUARTER_ORDER[q] <= QUARTER_ORDER[qInfo.q];
+}
+
 function isRenewalOverdue(dateStr){
   if(!dateStr) return false;
   return dateStr < nycTodayStr();
@@ -2065,6 +2108,7 @@ function renderScorecard(){
   const maxYear = Math.max(1, (qInfo && !qInfo.special) ? qInfo.year : 1);
   if(selectedYear > maxYear) selectedYear = maxYear;
 
+  const started = quarterHasStarted(selectedYear, selectedQuarter, qInfo);
   const del = deliveryPointsForQuarter(selectedYear, selectedQuarter);
   const bonus = bonusPointsForQuarter(selectedYear, selectedQuarter);
   const bonusSplit = splitBonusForQuarter(selectedYear, selectedQuarter);
@@ -2074,7 +2118,7 @@ function renderScorecard(){
   const maxDel = maxDeliveryForQuarter(selectedYear, selectedQuarter);
   const effMax = effectiveMaxForQuarter(selectedYear, selectedQuarter);
   const pct = effMax > 0 ? Math.round((total/effMax)*100) : 0;
-  const tier = tierFor(pct);
+  const tier = started ? tierFor(pct) : null;
   const yearLabel = selectedYear > 1 ? 'Y'+selectedYear+' ' : '';
 
   let html = '<div class="checkpoint-bar"><label style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);">Year</label> <select id="score-year-select">'+
@@ -2097,28 +2141,40 @@ function renderScorecard(){
   const typeKey = state.info.customerType;
   const typeBadge = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:10px;padding:3px 9px;margin-left:8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '';
 
-  html += '<div class="score-hero">'+
-    '<div class="eyebrow">'+escAttr(currentCustomer)+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
-    (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
-    '<div class="score-grid">'+
-      '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
-      '<div class="score-block"><div class="lbl">Bonus points</div><div class="val">+'+bonus+'</div>'+
-        (bonusSplit.major>0 ? '<div class="cap-note" style="margin-top:2px;">+'+bonusSplit.major+' from major wins — counts in full</div>' : '')+
-        '<div class="cap-note">+'+bonusSplit.minor+' from minor signals — counts up to '+bonusCap+' toward score</div>'+
+  if(!started){
+    html += '<div class="score-hero">'+
+      '<div class="eyebrow">'+escAttr(currentCustomer)+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+typeBadge+'</div>'+
+      (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
+      '<div class="field-text" style="margin-top:8px;color:var(--ink-soft);">'+escAttr(currentCustomer)+' hasn\'t reached '+yearLabel+QUARTER_LABEL[selectedQuarter]+' yet — no score or tier to show until that quarter starts.</div>'+
+    '</div>';
+  } else {
+    html += '<div class="score-hero">'+
+      '<div class="eyebrow">'+escAttr(currentCustomer)+' · '+yearLabel+QUARTER_LABEL[selectedQuarter]+' live score'+typeBadge+'</div>'+
+      (infoBits.length ? '<div class="info-summary">'+infoBits.join(' · ')+'</div>' : '')+
+      '<div class="score-grid">'+
+        '<div class="score-block"><div class="lbl">Delivery points</div><div class="val">'+del+' <span style="font-size:14px;color:#A8B3E8;">/ '+maxDel+' max</span></div></div>'+
+        '<div class="score-block"><div class="lbl">Bonus points</div><div class="val">+'+bonus+'</div>'+
+          (bonusSplit.major>0 ? '<div class="cap-note" style="margin-top:2px;">+'+bonusSplit.major+' from major wins — counts in full</div>' : '')+
+          '<div class="cap-note">+'+bonusSplit.minor+' from minor signals — counts up to '+bonusCap+' toward score</div>'+
+        '</div>'+
+        '<div class="score-block"><div class="lbl">% of quarter max</div><div class="val">'+pct+'%</div></div>'+
+        '<div class="score-block"><div class="lbl">Tier</div><span class="tier-badge" style="background:'+tier.color+'">'+tier.label+'</span></div>'+
       '</div>'+
-      '<div class="score-block"><div class="lbl">% of quarter max</div><div class="val">'+pct+'%</div></div>'+
-      '<div class="score-block"><div class="lbl">Tier</div><span class="tier-badge" style="background:'+tier.color+'">'+tier.label+'</span></div>'+
-    '</div>'+
-  '</div>';
+    '</div>';
+  }
 
   html += '<table class="tiertable"><thead><tr><th>Tier</th><th>% of quarter max ≥</th><th>What we do</th></tr></thead><tbody>';
   TIERS.forEach(function(t){
-    html += '<tr class="'+(t.key===tier.key?'current-tier':'')+'"><td><span class="tier-badge" style="background:'+t.color+';font-size:10px;padding:3px 9px;">'+t.label+'</span></td><td class="num">'+t.min+'%+</td><td>'+t.action+'</td></tr>';
+    html += '<tr class="'+(tier && t.key===tier.key?'current-tier':'')+'"><td><span class="tier-badge" style="background:'+t.color+';font-size:10px;padding:3px 9px;">'+t.label+'</span></td><td class="num">'+t.min+'%+</td><td>'+t.action+'</td></tr>';
   });
   html += '</tbody></table>';
 
   html += '<table class="quarters"><thead><tr><th>Quarter</th><th>Delivery / Max</th><th>Bonus (scored)</th><th>Total</th><th>% of max</th><th>Tier</th></tr></thead><tbody>';
   Object.keys(QUARTER_LABEL).forEach(function(q){
+    if(!quarterHasStarted(selectedYear, q, qInfo)){
+      html += '<tr><td>'+yearLabel+QUARTER_LABEL[q]+'</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="field-text" style="color:var(--ink-soft);">Not yet</span></td></tr>';
+      return;
+    }
     const d = deliveryPointsForQuarter(selectedYear, q);
     const b = bonusPointsForQuarter(selectedYear, q);
     const sb = scoredBonusForQuarter(selectedYear, q);
@@ -2147,11 +2203,19 @@ function escAttr(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
 
+// "Last win" should only ever be positive signal — friction/issue entries
+// score 0 points and represent a problem, not a win, so they're excluded
+// here even though they still show up correctly on the Activity timeline
+// and Feedback Trends tabs. Feature requests are excluded for the same
+// reason: they're a neutral ask from the customer, not something to
+// celebrate as a win.
+const NON_WIN_MS_IDS = ['ms-friction', 'ms-feature-request'];
 function lastWinInfo(bonusLog){
   let best = null;
   Object.keys(bonusLog||{}).forEach(function(q){
     (bonusLog[q]||[]).forEach(function(entry){
       if(!entry.date) return;
+      if(NON_WIN_MS_IDS.indexOf(entry.msId) !== -1) return;
       if(!best || entry.date > best.date) best = entry;
     });
   });
