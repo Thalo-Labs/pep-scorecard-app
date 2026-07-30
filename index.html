@@ -2879,6 +2879,13 @@ function dhOriginalContract(contracts){
 function dhExpansionCount(contracts){
   return (contracts||[]).filter(function(c){ return c.type === 'addition'; }).length;
 }
+// Each addition/expansion contract counts toward whichever quarter/year IT was
+// signed in, not the customer's original onboarding cohort — an expansion can
+// land years after a customer joined, and should show up when it happens, not
+// get buried under the quarter they originally signed.
+function dhExpansionContracts(contracts){
+  return (contracts||[]).filter(function(c){ return c.type==='addition' && c.signDate; });
+}
 // Eval/pilot conversion is inferred rather than hand-tagged, since nothing
 // was actually populating the old manual field: an original contract signed
 // for 6 months or less reads as a pilot. It's "converted" once any other
@@ -2930,6 +2937,8 @@ function dhCustomerRecord(name, info){
     dashDays: dhDaysBetween(c0.installDate, info.dashboardFirstActionDate),
     evalStatus: dhInferEvalStatus(contracts, c0),
     expansionCount: dhExpansionCount(contracts),
+    expansionQuarters: dhExpansionContracts(contracts).map(function(c){ return dhQuarterLabelForDate(c.signDate); }),
+    expansionYears: dhExpansionContracts(contracts).map(function(c){ return parseInt(c.signDate.slice(0,4), 10); }),
     // Sourced from the existing Survey #1 "supported by Thalo" score, dated
     // by when that survey was actually sent/answered — not the contract's
     // sign date — so a customer's support score lands in whichever period they
@@ -2940,16 +2949,15 @@ function dhCustomerRecord(name, info){
   };
 }
 
-function dhAggregateGroup(records, supportRecords){
+function dhAggregateGroup(records, supportRecords, expansionRecords, expansionBaseCount){
   const evalStarted = records.filter(function(r){ return r.evalStatus==='evaluation' || r.evalStatus==='converted'; });
   const converted = records.filter(function(r){ return r.evalStatus==='converted'; });
-  const withExpansion = records.filter(function(r){ return r.expansionCount>0; });
   return {
     ship: dhAvg(records.map(function(r){return r.shipDays;})),
     issue: dhAvg(records.map(function(r){return r.issueDays;})),
     dash: dhAvg(records.map(function(r){return r.dashDays;})),
     conv: dhPercent(converted.length, evalStarted.length),
-    exp: dhPercent(withExpansion.length, records.length),
+    exp: dhPercent(expansionRecords.length, expansionBaseCount),
     supp: dhAvg((supportRecords || records).map(function(r){return r.supportScore;}))
   };
 }
@@ -3029,12 +3037,27 @@ async function dhComputeLiveData(scope){
   const supportScoped = scope.quarter ? records.filter(function(r){ return r.supportQuarter === scope.quarter; })
     : scope.year ? records.filter(function(r){ return r.supportYear === scope.year; })
     : records;
+  // Expansion scopes independently too, by the addition contract's own sign
+  // date — same reasoning as support score above. The base it's a percentage
+  // of is every known customer in the segment (not just this quarter's
+  // cohort), since "did this customer expand this quarter" is a question that
+  // applies to the whole existing book, not only new joiners.
+  function expansionCountInScope(r){
+    if(scope.quarter) return r.expansionQuarters.filter(function(q){ return q===scope.quarter; }).length;
+    if(scope.year) return r.expansionYears.filter(function(y){ return y===scope.year; }).length;
+    return r.expansionCount;
+  }
+  const expansionScoped = records.filter(function(r){ return expansionCountInScope(r) > 0; });
   const icpRecords = scoped.filter(function(r){ return r.isIcp; });
   const otherRecords = scoped.filter(function(r){ return !r.isIcp; });
   const icpSupport = supportScoped.filter(function(r){ return r.isIcp; });
   const otherSupport = supportScoped.filter(function(r){ return !r.isIcp; });
-  const icpAgg = dhAggregateGroup(icpRecords, icpSupport);
-  const otherAgg = dhAggregateGroup(otherRecords, otherSupport);
+  const icpAll = records.filter(function(r){ return r.isIcp; });
+  const otherAll = records.filter(function(r){ return !r.isIcp; });
+  const icpExpansion = expansionScoped.filter(function(r){ return r.isIcp; });
+  const otherExpansion = expansionScoped.filter(function(r){ return !r.isIcp; });
+  const icpAgg = dhAggregateGroup(icpRecords, icpSupport, icpExpansion, icpAll.length);
+  const otherAgg = dhAggregateGroup(otherRecords, otherSupport, otherExpansion, otherAll.length);
   const data = {_icpCount: icpRecords.length, _otherCount: otherRecords.length};
   DH_METRIC_DEFS.filter(function(d){return d.key;}).forEach(function(d){
     data[d.key+'_icp'] = icpAgg[d.key];
@@ -3046,6 +3069,8 @@ async function dhComputeLiveData(scope){
   data._detail = {
     icp: icpRecords.map(function(r){ return {name:r.name, shipDays:r.shipDays, issueDays:r.issueDays, dashDays:r.dashDays, evalStatus:r.evalStatus, expansionCount:r.expansionCount}; }),
     other: otherRecords.map(function(r){ return {name:r.name, shipDays:r.shipDays, issueDays:r.issueDays, dashDays:r.dashDays, evalStatus:r.evalStatus, expansionCount:r.expansionCount}; }),
+    icpExpansion: icpExpansion.map(function(r){ return {name:r.name, expansionCount:expansionCountInScope(r)}; }),
+    otherExpansion: otherExpansion.map(function(r){ return {name:r.name, expansionCount:expansionCountInScope(r)}; }),
     icpSupport: icpSupport.map(function(r){ return {name:r.name, supportScore:r.supportScore}; }),
     otherSupport: otherSupport.map(function(r){ return {name:r.name, supportScore:r.supportScore}; })
   };
@@ -3109,7 +3134,9 @@ function dhBuildTable(viewData, ytdData, periodLabel, ytdLabel){
   function detailFor(dataObj, def, group){
     const d = dataObj._detail;
     if(!d) return null;
-    return def.key==='supp' ? d[group+'Support'] : d[group];
+    if(def.key==='supp') return d[group+'Support'];
+    if(def.key==='exp') return d[group+'Expansion'];
+    return d[group];
   }
   function fmtSpan(v, suffix, label, tip, bold){
     return '<span data-hover-tip="'+escAttr(label+':\n'+tip)+'"'+(bold?' style="font-weight:700;"':'')+'>'+fmtVal(v, suffix)+'</span>';
