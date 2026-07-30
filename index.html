@@ -1678,7 +1678,7 @@ async function renderAllActivity(){
   } else {
     entries.forEach(function(e){
       const ptsHtml = e.points !== undefined ? (e.points>0 ? ' — <b>+'+e.points+' pts</b>' : ' — <span class="no-pts-badge">🔕 no pts</span>') : '';
-      html += '<div class="log-item"><span>'+escAttr(e.date)+' — <b>'+escAttr(e.customer)+'</b> — '+(e.icon?e.icon+' ':'')+escAttr(e.label)+
+      html += '<div class="log-item"><span>'+escAttr(e.date)+' — '+searchNameLink(e.customer)+' — '+(e.icon?e.icon+' ':'')+escAttr(e.label)+
         ptsHtml+
         (e.category ? ' <span class="tag-flex">'+escAttr(e.category)+'</span>' : '')+
         (e.tag ? ' <span class="tag-flex">'+escAttr(e.tag)+'</span>' : '')+
@@ -3658,26 +3658,6 @@ async function loadSearchIndex(force){
   return records;
 }
 
-const SEARCH_FIELD_INTENTS = [
-  {key:'contract', test:/expir|renew|contract.*end|end.*contract|ending/},
-  {key:'awaitingShipment', test:/waiting|awaiting|not (yet )?shipped/},
-  {key:'install', test:/install/},
-  {key:'ship', test:/ship/},
-  {key:'sign', test:/\bsign/},
-  {key:'onboarding', test:/onboard/},
-  {key:'flag', test:/first flag|flag date/},
-  {key:'checkin', test:/check-?in/},
-  {key:'survey', test:/survey/},
-  {key:'units', test:/how many|units|sidekicks|quantity/},
-  {key:'score', test:/score|tier|standing|percent/}
-];
-function detectFieldIntent(q){
-  for(let i=0;i<SEARCH_FIELD_INTENTS.length;i++){
-    if(SEARCH_FIELD_INTENTS[i].test.test(q)) return SEARCH_FIELD_INTENTS[i];
-  }
-  return null;
-}
-
 function addDaysToStr(dateStr, days){
   const p = dateParts(dateStr);
   const d = new Date(Date.UTC(p.y, p.mo-1, p.d));
@@ -3708,12 +3688,139 @@ function detectTimeRange(q){
   return null;
 }
 
-// Longest-name-wins substring match, so "KCG Air" beats a stray "KCG".
+// Levenshtein distance -- classic edit-distance algorithm, used below to
+// tolerate typos in customer names (e.g. "csusaa", "vaayu") without needing
+// an exact match or an AI call.
+function levenshtein(a, b){
+  if(a === b) return 0;
+  const al = a.length, bl = b.length;
+  if(al === 0) return bl;
+  if(bl === 0) return al;
+  let prev = Array.from({length: bl+1}, function(_, i){ return i; });
+  for(let i=1; i<=al; i++){
+    const cur = [i];
+    for(let j=1; j<=bl; j++){
+      const cost = a[i-1] === b[j-1] ? 0 : 1;
+      cur[j] = Math.min(
+        prev[j] + 1,      // deletion
+        cur[j-1] + 1,      // insertion
+        prev[j-1] + cost   // substitution
+      );
+    }
+    prev = cur;
+  }
+  return prev[bl];
+}
+
+function normalizeForMatch(s){
+  return (s||'').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+const CUSTOMER_NAME_STOPWORDS = ['inc','llc','corp','corporation','company','co','the','and','of','group','systems','technologies','tech','solutions','partners','management','holdings'];
+function significantWords(name){
+  return normalizeForMatch(name).split(' ').filter(function(w){
+    return w.length > 1 && CUSTOMER_NAME_STOPWORDS.indexOf(w) === -1;
+  });
+}
+
+// A query word "fuzzy matches" a customer-name word if it's an exact match,
+// OR within a small edit-distance tolerance that scales with word length --
+// short words need a tighter tolerance than long ones, or "co" would match
+// half the dictionary.
+function fuzzyWordMatch(queryWord, nameWord){
+  if(queryWord === nameWord) return true;
+  if(nameWord.length <= 3) return false; // too short to safely fuzz
+  const maxDist = nameWord.length <= 5 ? 1 : (nameWord.length <= 9 ? 2 : 3);
+  return levenshtein(queryWord, nameWord) <= maxDist;
+}
+
+// A parenthetical in a customer's name -- e.g. "(CSUSA)" in "Comfort Systems
+// USA (CSUSA)" -- is how people actually refer to that customer day to day,
+// so it should stand in for the whole name on its own rather than being just
+// one of several words that all have to be present.
+function parentheticalAlias(name){
+  const m = /\(([^)]+)\)/.exec(name||'');
+  return m ? normalizeForMatch(m[1]) : null;
+}
+
 function detectCustomer(q, names){
-  const matches = names.filter(function(n){ return n && q.indexOf(n.toLowerCase()) !== -1; });
-  if(matches.length===0) return null;
-  matches.sort(function(a,b){ return b.length - a.length; });
-  return matches[0];
+  const queryWords = normalizeForMatch(q).split(' ').filter(Boolean);
+  const scored = names.map(function(n){
+    const nameWords = significantWords(n);
+    if(!nameWords.length) return null;
+    let matchedCount = 0, fuzzyUsed = false;
+    nameWords.forEach(function(nw){
+      const hit = queryWords.some(function(qw){
+        if(qw === nw) return true;
+        if(fuzzyWordMatch(qw, nw)){ fuzzyUsed = true; return true; }
+        return false;
+      });
+      if(hit) matchedCount++;
+    });
+    const alias = parentheticalAlias(n);
+    const aliasHit = !!alias && queryWords.some(function(qw){
+      if(qw === alias) return true;
+      if(fuzzyWordMatch(qw, alias)){ fuzzyUsed = true; return true; }
+      return false;
+    });
+    if(matchedCount === 0 && !aliasHit) return null;
+    // Every significant word in the customer's name must be accounted for
+    // (exactly or fuzzily) -- otherwise "Green" alone would match "Green Top
+    // Farms" AND "Greenlight HVAC" with no way to disambiguate. The
+    // parenthetical alias bypasses this: matching it alone is a full match.
+    if(matchedCount < nameWords.length && !aliasHit) return null;
+    return {name:n, wordCount:nameWords.length, fuzzy:fuzzyUsed, len:n.length};
+  }).filter(Boolean);
+
+  if(!scored.length) return null;
+  // Prefer more words matched, then exact over fuzzy, then longer name (more
+  // specific) -- same tie-break spirit as the old "longest name wins" rule.
+  scored.sort(function(a,b){
+    if(b.wordCount !== a.wordCount) return b.wordCount - a.wordCount;
+    if(a.fuzzy !== b.fuzzy) return a.fuzzy ? 1 : -1;
+    return b.len - a.len;
+  });
+  return scored[0].name;
+}
+
+// Synonym sets per intent, instead of one regex per field -- any of these
+// words appearing anywhere in the query counts as a hit for that intent,
+// regardless of word order or which exact word was chosen.
+const INTENT_SYNONYMS = {
+  contract: ['expire','expires','expiration','expiring','renew','renewal','renews','end','ending','ends','lapse','lapsed','lapsing','due','up','contract'],
+  install: ['install','installed','installation','setup','set up'],
+  ship: ['ship','shipped','shipping','sent','dispatch','dispatched'],
+  sign: ['sign','signed','signing','onboard date','start date','started'],
+  onboarding: ['onboard','onboarding','kickoff','training meeting'],
+  flag: ['first flag','flag date','flagged'],
+  checkin: ['check-in','checkin','check in'],
+  survey: ['survey','nps','feedback score','pulse','supported by thalo'],
+  units: ['how many','units','sidekicks','quantity','count','pro','max'],
+  score: ['score','tier','standing','percent','doing','performing','status'],
+  awaitingShipment: ['waiting','awaiting','not yet shipped','not shipped']
+};
+
+// Returns every intent whose synonym list has at least one hit in the query
+// -- not just the first match -- so "when did CSUSA sign and how many units
+// do they have" resolves both `sign` and `units` in one pass.
+function detectIntents(q){
+  const hits = [];
+  Object.keys(INTENT_SYNONYMS).forEach(function(key){
+    const found = INTENT_SYNONYMS[key].some(function(phrase){ return q.indexOf(phrase) !== -1; });
+    if(found) hits.push(key);
+  });
+  return hits;
+}
+
+// Renders one or more fact answers for a single customer, reusing the
+// existing per-intent branches from renderFactAnswer -- just looped instead
+// of picking one.
+function renderMultiFactAnswer(el, record, intents){
+  const parts = intents.map(function(key){
+    const tmp = document.createElement('div');
+    renderFactAnswer(tmp, record, {key:key});
+    return tmp.innerHTML;
+  });
+  el.innerHTML = parts.join('');
 }
 
 function contractUnits(c){
@@ -3721,8 +3828,18 @@ function contractUnits(c){
   return (parseInt(c.quantityPro,10)||0) + (parseInt(c.quantityMax,10)||0) + legacyQty;
 }
 function contractUnitsLabel(c){
-  const qty = contractUnits(c);
-  return qty ? qty+' unit'+(qty===1?'':'s') : '';
+  // Legacy contracts saved before the Pro/Max split just have a flat
+  // `quantity` with no type to report, so those still show as a plain count.
+  if(c.quantityPro===undefined && c.quantityMax===undefined){
+    const legacyQty = parseInt(c.quantity,10)||0;
+    return legacyQty ? legacyQty+' unit'+(legacyQty===1?'':'s') : '';
+  }
+  const pro = parseInt(c.quantityPro,10)||0;
+  const max = parseInt(c.quantityMax,10)||0;
+  const parts = [];
+  if(pro) parts.push(pro+' Pro');
+  if(max) parts.push(max+' Max');
+  return parts.join(' / ');
 }
 function contractLine(c){
   const parts = [];
@@ -3844,23 +3961,28 @@ async function runSearch(rawQuery){
   if(!el) return;
   const q = (rawQuery||'').toLowerCase().trim();
   if(!q){
-    el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Try: "when does Vayu\u2019s contract expire", "contracts ending next month", "overdue renewals", or just a customer name.</div>';
+    el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Try: "when does CSUSA\u2019s contract expire", "contracts ending next month", "overdue renewals", or just a customer name.</div>';
     return;
   }
   const index = await loadSearchIndex();
   const names = index.map(function(r){ return r.name; });
   const customer = detectCustomer(q, names);
-  const fieldIntent = detectFieldIntent(q);
+  const intents = detectIntents(q);
   const timeRange = detectTimeRange(q);
 
-  if(customer && fieldIntent){
-    renderFactAnswer(el, index.find(function(r){ return r.name===customer; }), fieldIntent);
-  } else if(!customer && fieldIntent && fieldIntent.key==='awaitingShipment'){
+  if(customer && intents.length){
+    renderMultiFactAnswer(el, index.find(function(r){ return r.name===customer; }), intents);
+  } else if(!customer && intents.indexOf('awaitingShipment') !== -1){
     renderAwaitingShipmentAcrossCustomers(el, index);
-  } else if(!customer && (timeRange || (fieldIntent && fieldIntent.key==='contract'))){
+  } else if(!customer && timeRange){
     renderContractListAcrossCustomers(el, index, timeRange);
-  } else if(customer && !fieldIntent){
+  } else if(customer && !intents.length){
     renderCustomerOverview(el, index.find(function(r){ return r.name===customer; }));
+  } else if(intents.length && !customer){
+    // A field question came through but no customer matched -- rather than
+    // silently defaulting to a cross-customer list (the original bug),
+    // say so plainly and suggest what to check.
+    el.innerHTML = '<div class="field-text" style="color:var(--ink-soft);">Couldn\u2019t match that to a specific customer \u2014 check the spelling against the name on the All Customers tab, or ask a cross-customer question like "contracts ending next month".</div>';
   } else {
     renderPlainMatches(el, index, q);
   }
