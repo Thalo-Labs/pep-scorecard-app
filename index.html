@@ -1656,6 +1656,7 @@ async function renderAllActivity(){
       entries.push(Object.assign({}, e, {customer:name}));
     });
   }));
+  entries.sort(function(a,b){ return b.date.localeCompare(a.date); });
   if(aaSortOrder === 'asc') entries.reverse();
 
   let html = '<div class="field-text" style="margin-bottom:10px;color:var(--ink-soft);">Every dated activity across every customer — set-cadence meeting dates, contract dates, downtime, and everything logged in each customer\'s Bonus &amp; feedback log. To log a one-off meeting or edit an entry\'s wording, go to that customer\'s own Activity or Bonus &amp; feedback log tab.</div>';
