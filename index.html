@@ -1500,6 +1500,7 @@ function renderActivity(){
 const FEEDBACK_TREND_TYPES = ['ms-feedback','ms-feature-request','ms-friction'];
 const FT_DATE_FILTERS = [
   {key:'all', label:'All feedback'},
+  {key:'7d', label:'Past 7 days'},
   {key:'30d', label:'Past 30 days'},
   {key:'ytd', label:'YTD'}
 ];
@@ -1507,6 +1508,7 @@ let ftExpanded = {};
 let ftDateFilter = 'all';
 
 function ftCutoffDate(){
+  if(ftDateFilter === '7d') return addDaysToStr(nycTodayStr(), -7);
   if(ftDateFilter === '30d') return addDaysToStr(nycTodayStr(), -30);
   if(ftDateFilter === 'ytd') return dateParts(nycTodayStr()).y+'-01-01';
   return null;
