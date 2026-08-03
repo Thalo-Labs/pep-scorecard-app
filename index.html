@@ -1692,19 +1692,34 @@ function twClassifyEntry(e){
   return 'gray';
 }
 
+// A customer can land in only one column per week. Where several entries
+// qualify, the worst signal wins (red beats yellow beats green beats gray)
+// so a regression can't get buried under an unrelated positive note from
+// the same week; ties within a color go to the most recent entry.
+const TW_COLOR_PRIORITY = {red:0, yellow:1, green:2, gray:3};
+
 async function buildThisWeekBuckets(){
   const today = nycTodayStr();
   const cutoff = addDaysToStr(today, -7);
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
-  const buckets = {green:[], yellow:[], red:[], gray:[]};
+  const byCustomer = {};
   await Promise.all(list.map(async function(name){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     buildActivityEntries(s).forEach(function(e){
       if(e.date < cutoff || e.date > today) return;
-      buckets[twClassifyEntry(e)].push(Object.assign({}, e, {customer:name}));
+      const color = twClassifyEntry(e);
+      const existing = byCustomer[name];
+      if(!existing || TW_COLOR_PRIORITY[color] < TW_COLOR_PRIORITY[existing.color] ||
+         (TW_COLOR_PRIORITY[color] === TW_COLOR_PRIORITY[existing.color] && e.date > existing.date)){
+        byCustomer[name] = Object.assign({}, e, {customer:name, color:color});
+      }
     });
   }));
+  const buckets = {green:[], yellow:[], red:[], gray:[]};
+  Object.keys(byCustomer).forEach(function(name){
+    buckets[byCustomer[name].color].push(byCustomer[name]);
+  });
   Object.keys(buckets).forEach(function(k){ buckets[k].sort(function(a,b){ return b.date.localeCompare(a.date); }); });
   return buckets;
 }
@@ -4367,6 +4382,16 @@ window.pepAppInit = async function(){
       text: "This is home base for every customer, ranked and ready to explore. Come back here anytime you want the big picture."
     },
     {
+      selector: "#this-week-summary",
+      icon: "🗓️",
+      title: "This week at a glance",
+      text: "Every customer's last 7 days, sorted into Improved, Watch, Regressed, and Logged — so you can catch what changed without opening each one.",
+      onEnter: function () {
+        const t = document.querySelector('.tab[data-panel="leaderboard"]');
+        if (t && !t.classList.contains("active")) t.click();
+      }
+    },
+    {
       selector: '.tab[data-panel="deployment-health"]',
       icon: "🩺",
       title: "Check the pulse",
@@ -4424,6 +4449,7 @@ window.pepAppInit = async function(){
 
   function positionForStep(index) {
     const step = PEP_TOUR_STEPS[index];
+    if (step.onEnter) step.onEnter();
     const el = document.querySelector(step.selector);
 
     if (!el) {
