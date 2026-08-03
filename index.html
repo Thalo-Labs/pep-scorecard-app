@@ -4495,12 +4495,18 @@ window.pepAppInit = async function(){
       `;
 
       // position tooltip below the element by default; flip above if
-      // there isn't room at the bottom of the viewport
-      const tooltipHeight = 150;
+      // there isn't room at the bottom of the viewport. Height is
+      // measured after render (varies with step text length) rather
+      // than assumed, so longer copy doesn't push the buttons off-screen.
+      const tooltipHeight = tooltip.offsetHeight || 150;
       let top = rect.bottom + pad + 12;
       if (top + tooltipHeight > window.innerHeight) {
-        top = Math.max(12, rect.top - tooltipHeight - 12);
+        top = rect.top - tooltipHeight - 12;
       }
+      // Clamp so the buttons stay on-screen even when neither placement
+      // fits, e.g. a spotlighted element tall enough to span the viewport.
+      top = Math.min(top, window.innerHeight - tooltipHeight - 12);
+      top = Math.max(12, top);
       let left = Math.min(
         Math.max(12, rect.left),
         window.innerWidth - 320
