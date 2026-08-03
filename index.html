@@ -230,9 +230,8 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .tw-col{border-radius:10px;padding:12px 14px;}
 .tw-col-head{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:8px;}
 .tw-col-head b{font-family:'Space Grotesk',sans-serif;font-size:18px;}
-.tw-item{font-size:12.5px;line-height:1.5;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06);}
+.tw-item{font-size:12.5px;line-height:1.5;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06);cursor:default;}
 .tw-item:last-child{border-bottom:none;}
-.tw-detail{color:var(--ink-soft);font-size:11px;}
 .tw-empty{font-size:12px;color:var(--ink-soft);font-style:italic;}
 .tw-more{font-size:11px;color:var(--ink-soft);margin-top:4px;}
 </style>
@@ -322,8 +321,6 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
     <div id="contracts-list"></div>
   </div>
 
-  <div id="this-week-summary"></div>
-
   <div class="tabs">
     <div class="tab active" data-panel="leaderboard">All customers</div>
     <div class="tab" data-panel="deployment-health">Deployment Health</div>
@@ -350,6 +347,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
   <div class="panel" id="panel-scorecard"></div>
   <div class="panel" id="panel-activity"></div>
   <div class="panel active" id="panel-leaderboard"></div>
+  <div id="this-week-summary"></div>
   <div class="panel" id="panel-deployment-health"></div>
   <div class="panel" id="panel-feedback-trends"></div>
   <div class="panel" id="panel-all-activity"></div>
@@ -1664,6 +1662,13 @@ const TW_MS_SENTIMENT = {
   'ms-feature-request':'yellow', 'ms-friction':'red'
 };
 
+function twSummarize(text, maxLen){
+  if(text.length <= maxLen) return text;
+  const cut = text.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
 function twClassifyEntry(e){
   if(e.msId && TW_MS_SENTIMENT[e.msId]) return TW_MS_SENTIMENT[e.msId];
   if(e.label.indexOf('Downtime started') === 0) return 'red';
@@ -1708,7 +1713,9 @@ async function renderThisWeekSummary(){
       html += '<div class="tw-empty">Nothing this week</div>';
     } else {
       items.slice(0,6).forEach(function(e){
-        html += '<div class="tw-item">'+searchNameLink(e.customer)+' — '+escAttr(e.label)+(e.detail?'<div class="tw-detail">'+escAttr(e.detail)+'</div>':'')+'</div>';
+        const body = e.label+(e.detail?': '+e.detail:'');
+        const full = e.customer+' — '+body;
+        html += '<div class="tw-item" title="'+escAttr(full)+'">'+searchNameLink(e.customer)+' — '+escAttr(twSummarize(body, 50))+'</div>';
       });
       if(items.length > 6) html += '<div class="tw-more">+'+(items.length-6)+' more — see All activity</div>';
     }
