@@ -222,6 +222,19 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .dt-detail-row td{background:#FAFAF7;padding:8px 12px;font-size:11.5px;color:var(--ink-soft);}
 .dt-detail-row .dt-asset-line{margin-bottom:4px;}
 .dt-detail-row .dt-asset-line:last-child{margin-bottom:0;}
+
+.tw-header{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;margin-bottom:10px;display:flex;align-items:baseline;gap:8px;}
+.tw-header .cap-note{font-weight:400;}
+.tw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+@media (max-width:900px){.tw-grid{grid-template-columns:repeat(2,1fr);}}
+.tw-col{border-radius:10px;padding:12px 14px;}
+.tw-col-head{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.05em;margin-bottom:8px;}
+.tw-col-head b{font-family:'Space Grotesk',sans-serif;font-size:18px;}
+.tw-item{font-size:12.5px;line-height:1.5;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06);}
+.tw-item:last-child{border-bottom:none;}
+.tw-detail{color:var(--ink-soft);font-size:11px;}
+.tw-empty{font-size:12px;color:var(--ink-soft);font-style:italic;}
+.tw-more{font-size:11px;color:var(--ink-soft);margin-top:4px;}
 </style>
 </head>
 <body>
@@ -308,6 +321,8 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
     </div>
     <div id="contracts-list"></div>
   </div>
+
+  <div id="this-week-summary"></div>
 
   <div class="tabs">
     <div class="tab active" data-panel="leaderboard">All customers</div>
@@ -1380,7 +1395,7 @@ function buildActivityEntries(s){
     (s.bonusLog[q] || []).forEach(function(entry, idx){
       if(!entry.date) return;
       const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
-      entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, icon:ms&&ms.icon?ms.icon:'', category:entry.category||'', tag:'Bonus & feedback log', removeKey:q+':'+idx});
+      entries.push({date:entry.date, label:ms?ms.trigger:entry.msId, detail:entry.notes||'', points:entry.points, icon:ms&&ms.icon?ms.icon:'', category:entry.category||'', tag:'Bonus & feedback log', removeKey:q+':'+idx, msId:entry.msId});
     });
   });
 
@@ -1640,6 +1655,67 @@ function aaCutoffDate(){
   if(aaDateFilter === '30d') return addDaysToStr(nycTodayStr(), -30);
   if(aaDateFilter === 'ytd') return dateParts(nycTodayStr()).y+'-01-01';
   return null;
+}
+
+const TW_MS_SENTIMENT = {
+  'ms-expansion':'green', 'ms-winlogged':'green', 'ms-promoter':'green',
+  'ms-techvolume':'green', 'ms-feedback':'green', 'ms-feature':'green',
+  'ms-feature-use':'green', 'ms-event':'green', 'ms-meeting':'green', 'ms-other':'green',
+  'ms-feature-request':'yellow', 'ms-friction':'red'
+};
+
+function twClassifyEntry(e){
+  if(e.msId && TW_MS_SENTIMENT[e.msId]) return TW_MS_SENTIMENT[e.msId];
+  if(e.label.indexOf('Downtime started') === 0) return 'red';
+  if(e.label.indexOf('Downtime resolved') === 0) return 'green';
+  if(e.label.indexOf('Contract') === 0 && e.label.indexOf('expires') !== -1) return 'red';
+  return 'gray';
+}
+
+async function buildThisWeekBuckets(){
+  const today = nycTodayStr();
+  const cutoff = addDaysToStr(today, -7);
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  const buckets = {green:[], yellow:[], red:[], gray:[]};
+  await Promise.all(list.map(async function(name){
+    const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
+    buildActivityEntries(s).forEach(function(e){
+      if(e.date < cutoff || e.date > today) return;
+      buckets[twClassifyEntry(e)].push(Object.assign({}, e, {customer:name}));
+    });
+  }));
+  Object.keys(buckets).forEach(function(k){ buckets[k].sort(function(a,b){ return b.date.localeCompare(a.date); }); });
+  return buckets;
+}
+
+async function renderThisWeekSummary(){
+  const el = document.getElementById('this-week-summary');
+  if(!el) return;
+  const buckets = await buildThisWeekBuckets();
+  const sections = [
+    {key:'green', label:'Improved', color:'#1E9E6B', bg:'#EAF7EF'},
+    {key:'yellow', label:'Watch', color:'#D97706', bg:'#FFF7E8'},
+    {key:'red', label:'Regressed', color:'#DC2626', bg:'#FDEDEC'},
+    {key:'gray', label:'Logged', color:'#6B7280', bg:'#F1EFE8'}
+  ];
+  let html = '<div class="tw-header">This week at a glance <span class="cap-note">last 7 days, across every customer</span></div><div class="tw-grid">';
+  sections.forEach(function(sec){
+    const items = buckets[sec.key];
+    html += '<div class="tw-col" style="background:'+sec.bg+';">'+
+      '<div class="tw-col-head"><span style="color:'+sec.color+';">'+sec.label.toUpperCase()+'</span><b style="color:'+sec.color+';">'+items.length+'</b></div>';
+    if(!items.length){
+      html += '<div class="tw-empty">Nothing this week</div>';
+    } else {
+      items.slice(0,6).forEach(function(e){
+        html += '<div class="tw-item">'+searchNameLink(e.customer)+' — '+escAttr(e.label)+(e.detail?'<div class="tw-detail">'+escAttr(e.detail)+'</div>':'')+'</div>';
+      });
+      if(items.length > 6) html += '<div class="tw-more">+'+(items.length-6)+' more — see All activity</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 async function renderAllActivity(){
@@ -4101,6 +4177,7 @@ window.pepAppInit = async function(){
   // All Customers is the default active panel now, but renderAll() doesn't
   // render it (it's only ever rendered on-demand via the tab click handler).
   await renderLeaderboard();
+  renderThisWeekSummary();
 };
 </script>
 
