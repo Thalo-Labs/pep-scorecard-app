@@ -1734,7 +1734,7 @@ async function renderThisWeekSummary(){
     {key:'red', label:'Regressed', color:'#DC2626', bg:'#FDEDEC'},
     {key:'gray', label:'Logged', color:'#6B7280', bg:'#F1EFE8'}
   ];
-  let html = '<div class="tw-header">This week at a glance <span class="cap-note">last 7 days, across every customer</span></div><div class="tw-grid">';
+  let html = '<div class="tw-header">This week at a glance <span class="cap-note">last 7 days, customers with an update logged</span></div><div class="tw-grid">';
   sections.forEach(function(sec){
     const items = buckets[sec.key];
     html += '<div class="tw-col" style="background:'+sec.bg+';">'+
@@ -4385,7 +4385,7 @@ window.pepAppInit = async function(){
       selector: "#this-week-summary",
       icon: "🗓️",
       title: "This week at a glance",
-      text: "Every customer's last 7 days, sorted into Improved, Watch, Regressed, and Logged — so you can catch what changed without opening each one.",
+      text: "Whichever customers had an update logged in the last 7 days, sorted into Improved, Watch, Regressed, and Logged — so you can catch what changed without opening each one.",
       onEnter: function () {
         const t = document.querySelector('.tab[data-panel="leaderboard"]');
         if (t && !t.classList.contains("active")) t.click();
