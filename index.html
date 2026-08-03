@@ -223,6 +223,8 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .dt-detail-row .dt-asset-line{margin-bottom:4px;}
 .dt-detail-row .dt-asset-line:last-child{margin-bottom:0;}
 
+#this-week-summary{display:none;}
+#panel-leaderboard.active + #this-week-summary{display:block;}
 .tw-header{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;margin-bottom:10px;display:flex;align-items:baseline;gap:8px;}
 .tw-header .cap-note{font-weight:400;}
 .tw-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
@@ -234,7 +236,8 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .tw-item:last-child{border-bottom:none;}
 .tw-detail{color:var(--ink-soft);font-size:11px;}
 .tw-empty{font-size:12px;color:var(--ink-soft);font-style:italic;}
-.tw-more{font-size:11px;color:var(--ink-soft);margin-top:4px;}
+.tw-more{font-size:11px;color:var(--ink-soft);margin-top:4px;cursor:pointer;}
+.tw-more:hover{text-decoration:underline;}
 </style>
 </head>
 <body>
@@ -1729,7 +1732,7 @@ async function renderThisWeekSummary(){
         html += '<div class="tw-item" title="'+escAttr(full)+'">'+searchNameLink(e.customer)+' — '+escAttr(e.label)+
           (e.detail?'<div class="tw-detail">'+escAttr(twSummarize(e.detail, 70))+'</div>':'')+'</div>';
       });
-      if(items.length > 6) html += '<div class="tw-more">+'+(items.length-6)+' more — see All activity</div>';
+      if(items.length > 6) html += '<div class="tw-more" data-goto-tab="all-activity">+'+(items.length-6)+' more — see All activity</div>';
     }
     html += '</div>';
   });
@@ -4176,6 +4179,14 @@ document.addEventListener('click', async function(e){
   await selectCustomerAndRender(name);
   const scorecardTab = document.querySelector('.tab[data-panel="scorecard"]');
   if(scorecardTab) scorecardTab.click();
+});
+
+// "+N more — see All activity" (This Week at a Glance) jumps to that tab.
+document.addEventListener('click', function(e){
+  const el = e.target.closest('[data-goto-tab]');
+  if(!el) return;
+  const tab = document.querySelector('.tab[data-panel="'+el.dataset.gotoTab+'"]');
+  if(tab) tab.click();
 });
 
 let pepAppInitialized = false;
