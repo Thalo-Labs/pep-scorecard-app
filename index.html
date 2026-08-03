@@ -232,6 +232,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .tw-col-head b{font-family:'Space Grotesk',sans-serif;font-size:18px;}
 .tw-item{font-size:12.5px;line-height:1.5;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06);cursor:default;}
 .tw-item:last-child{border-bottom:none;}
+.tw-detail{color:var(--ink-soft);font-size:11px;}
 .tw-empty{font-size:12px;color:var(--ink-soft);font-style:italic;}
 .tw-more{font-size:11px;color:var(--ink-soft);margin-top:4px;}
 </style>
@@ -1662,11 +1663,22 @@ const TW_MS_SENTIMENT = {
   'ms-feature-request':'yellow', 'ms-friction':'red'
 };
 
+// Extractive summary: prefer ending on a full sentence, then a clause
+// (comma/semicolon), then a word — in that order — rather than chopping
+// mid-thought. Only the word-boundary fallback needs an ellipsis; a
+// sentence or clause end already reads as a complete thought.
 function twSummarize(text, maxLen){
   if(text.length <= maxLen) return text;
-  const cut = text.slice(0, maxLen);
-  const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+  const window = text.slice(0, maxLen);
+
+  const sentenceEnd = Math.max(window.lastIndexOf('. '), window.lastIndexOf('! '), window.lastIndexOf('? '));
+  if(sentenceEnd > 20) return text.slice(0, sentenceEnd + 1).trim();
+
+  const clauseEnd = Math.max(window.lastIndexOf(', '), window.lastIndexOf('; '));
+  if(clauseEnd > 20) return text.slice(0, clauseEnd).trim() + '…';
+
+  const lastSpace = window.lastIndexOf(' ');
+  return (lastSpace > 20 ? window.slice(0, lastSpace) : window) + '…';
 }
 
 function twClassifyEntry(e){
@@ -1713,9 +1725,9 @@ async function renderThisWeekSummary(){
       html += '<div class="tw-empty">Nothing this week</div>';
     } else {
       items.slice(0,6).forEach(function(e){
-        const body = e.label+(e.detail?': '+e.detail:'');
-        const full = e.customer+' — '+body;
-        html += '<div class="tw-item" title="'+escAttr(full)+'">'+searchNameLink(e.customer)+' — '+escAttr(twSummarize(body, 50))+'</div>';
+        const full = e.customer+' — '+e.label+(e.detail?': '+e.detail:'');
+        html += '<div class="tw-item" title="'+escAttr(full)+'">'+searchNameLink(e.customer)+' — '+escAttr(e.label)+
+          (e.detail?'<div class="tw-detail">'+escAttr(twSummarize(e.detail, 70))+'</div>':'')+'</div>';
       });
       if(items.length > 6) html += '<div class="tw-more">+'+(items.length-6)+' more — see All activity</div>';
     }
