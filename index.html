@@ -1702,7 +1702,7 @@ const TW_MS_SENTIMENT = {
   'ms-expansion':'green', 'ms-winlogged':'green', 'ms-promoter':'green',
   'ms-techvolume':'green', 'ms-feedback':'green', 'ms-feature':'green',
   'ms-feature-use':'green', 'ms-event':'green', 'ms-meeting':'green', 'ms-other':'green',
-  'ms-feature-request':'yellow', 'ms-friction':'red'
+  'ms-feature-request':'gray', 'ms-friction':'red'
 };
 
 // Extractive summary: prefer ending on a full sentence, then a clause
@@ -1731,35 +1731,56 @@ function twClassifyEntry(e){
   return 'gray';
 }
 
-// A customer can land in only one column per week. Where several entries
-// qualify, the worst signal wins (red beats yellow beats green beats gray)
+// A customer can land in only one of Improved/Regressed per week — where
+// several non-gray entries qualify, the worst signal wins (red beats green)
 // so a regression can't get buried under an unrelated positive note from
-// the same week; ties within a color go to the most recent entry.
-const TW_COLOR_PRIORITY = {red:0, yellow:1, green:2, gray:3};
+// the same week; ties go to the most recent entry. Gray (logged) entries
+// are tracked separately per customer so a fixed-cadence meeting still shows
+// up in "This past week" even when that same customer also had a red/green
+// entry — it's fine for a customer to appear in both columns.
+const TW_COLOR_PRIORITY = {red:0, green:1, gray:2};
 
 async function buildThisWeekBuckets(){
   const today = nycTodayStr();
   const cutoff = addDaysToStr(today, -7);
+  const upcomingEnd = addDaysToStr(today, 7);
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
-  const byCustomer = {};
+  const bestNonGray = {}, bestGray = {}, bestUpcoming = {};
   await Promise.all(list.map(async function(name){
     const s = (name === liveCustomer) ? liveState : await loadCustomerState(name);
     buildActivityEntries(s).forEach(function(e){
+      if(e.date > today && e.date <= upcomingEnd){
+        const existingUp = bestUpcoming[name];
+        if(!existingUp || e.date < existingUp.date){
+          bestUpcoming[name] = Object.assign({}, e, {customer:name, color:'gray'});
+        }
+        return;
+      }
       if(e.date < cutoff || e.date > today) return;
       const color = twClassifyEntry(e);
-      const existing = byCustomer[name];
+      if(color === 'gray'){
+        const existingGray = bestGray[name];
+        if(!existingGray || e.date > existingGray.date){
+          bestGray[name] = Object.assign({}, e, {customer:name, color:color});
+        }
+        return;
+      }
+      const existing = bestNonGray[name];
       if(!existing || TW_COLOR_PRIORITY[color] < TW_COLOR_PRIORITY[existing.color] ||
          (TW_COLOR_PRIORITY[color] === TW_COLOR_PRIORITY[existing.color] && e.date > existing.date)){
-        byCustomer[name] = Object.assign({}, e, {customer:name, color:color});
+        bestNonGray[name] = Object.assign({}, e, {customer:name, color:color});
       }
     });
   }));
-  const buckets = {green:[], yellow:[], red:[], gray:[]};
-  Object.keys(byCustomer).forEach(function(name){
-    buckets[byCustomer[name].color].push(byCustomer[name]);
-  });
-  Object.keys(buckets).forEach(function(k){ buckets[k].sort(function(a,b){ return b.date.localeCompare(a.date); }); });
+  const buckets = {green:[], red:[], gray:[], upcoming:[]};
+  Object.keys(bestNonGray).forEach(function(name){ buckets[bestNonGray[name].color].push(bestNonGray[name]); });
+  Object.keys(bestGray).forEach(function(name){ buckets.gray.push(bestGray[name]); });
+  Object.keys(bestUpcoming).forEach(function(name){ buckets.upcoming.push(bestUpcoming[name]); });
+  buckets.green.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  buckets.red.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  buckets.gray.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  buckets.upcoming.sort(function(a,b){ return a.date.localeCompare(b.date); });
   return buckets;
 }
 
@@ -1769,17 +1790,17 @@ async function renderThisWeekSummary(){
   const buckets = await buildThisWeekBuckets();
   const sections = [
     {key:'green', label:'Improved', color:'#1E9E6B', bg:'#EAF7EF'},
-    {key:'yellow', label:'Watch', color:'#D97706', bg:'#FFF7E8'},
     {key:'red', label:'Regressed', color:'#DC2626', bg:'#FDEDEC'},
-    {key:'gray', label:'Logged', color:'#6B7280', bg:'#F1EFE8'}
+    {key:'gray', label:'This past week', color:'#6B7280', bg:'#F1EFE8'},
+    {key:'upcoming', label:'Upcoming', color:'#2563EB', bg:'#EAF1FF'}
   ];
-  let html = '<div class="tw-header">This week at a glance <span class="cap-note">last 7 days, customers with an update logged</span></div><div class="tw-grid">';
+  let html = '<div class="tw-header">This week at a glance <span class="cap-note">last 7 days logged, next 7 days planned</span></div><div class="tw-grid">';
   sections.forEach(function(sec){
     const items = buckets[sec.key];
     html += '<div class="tw-col" style="background:'+sec.bg+';">'+
       '<div class="tw-col-head"><span style="color:'+sec.color+';">'+sec.label.toUpperCase()+'</span><b style="color:'+sec.color+';">'+items.length+'</b></div>';
     if(!items.length){
-      html += '<div class="tw-empty">Nothing this week</div>';
+      html += '<div class="tw-empty">'+(sec.key==='upcoming'?'Nothing planned':'Nothing this week')+'</div>';
     } else {
       items.slice(0,6).forEach(function(e){
         const full = e.customer+' — '+e.label+(e.detail?': '+e.detail:'');
@@ -4555,7 +4576,7 @@ window.pepAppInit = async function(){
       selector: "#this-week-summary",
       icon: "🗓️",
       title: "This week at a glance",
-      text: "Whichever customers had an update logged in the last 7 days, sorted into Improved, Watch, Regressed, and Logged — so you can catch what changed without opening each one.",
+      text: "Whichever customers had an update in the last 7 days, sorted into Improved, Regressed, and This past week — plus what's planned in the next 7 days — so you can catch what changed without opening each one.",
       onEnter: function () {
         const t = document.querySelector('.tab[data-panel="leaderboard"]');
         if (t && !t.classList.contains("active")) t.click();
