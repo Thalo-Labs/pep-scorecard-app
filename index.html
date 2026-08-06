@@ -931,7 +931,7 @@ function genContractId(){
   return 'c-'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 }
 function emptyContract(){
-  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false};
+  return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false, valueExTax:'', valueIncTax:''};
 }
 function defaultCustomerState(){
   return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}, downtimeEvents:[]};
@@ -1803,8 +1803,8 @@ async function renderThisWeekSummary(){
       html += '<div class="tw-empty">'+(sec.key==='upcoming'?'Nothing planned':'Nothing this week')+'</div>';
     } else {
       items.slice(0,6).forEach(function(e){
-        const full = e.customer+' — '+e.label+(e.detail?': '+e.detail:'');
-        html += '<div class="tw-item" title="'+escAttr(full)+'">'+searchNameLink(e.customer)+' — '+escAttr(e.label)+
+        const full = e.date+' — '+e.customer+' — '+e.label+(e.detail?': '+e.detail:'');
+        html += '<div class="tw-item" title="'+escAttr(full)+'">'+'<span class="no-pts-badge">'+escAttr(e.date)+'</span> — '+searchNameLink(e.customer)+' — '+escAttr(e.label)+
           (e.detail?'<div class="tw-detail">'+escAttr(twSummarize(e.detail, 70))+'</div>':'')+'</div>';
       });
       if(items.length > 6) html += '<div class="tw-more" data-goto-tab="all-activity">+'+(items.length-6)+' more — see All activity</div>';
@@ -2055,6 +2055,10 @@ function supersededContractIds(contracts){
   return supersededIds;
 }
 
+function fmtMoney(n){
+  return (Math.round((n||0)*100)/100).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:2});
+}
+
 function contractSummary(contracts){
   contracts = contracts || [];
   const totalPro = contracts.reduce(function(sum, c){ return sum + (parseInt(c.quantityPro, 10) || 0); }, 0);
@@ -2063,6 +2067,8 @@ function contractSummary(contracts){
   // count those toward the total too so old data doesn't silently disappear.
   const totalLegacy = contracts.reduce(function(sum, c){ return sum + (c.quantityPro===undefined && c.quantityMax===undefined ? (parseInt(c.quantity, 10) || 0) : 0); }, 0);
   const totalSidekicks = totalPro + totalMax + totalLegacy;
+  const totalValueExTax = contracts.reduce(function(sum, c){ return sum + (parseFloat(c.valueExTax) || 0); }, 0);
+  const totalValueIncTax = contracts.reduce(function(sum, c){ return sum + (parseFloat(c.valueIncTax) || 0); }, 0);
   const firstSigned = contracts.map(function(c){ return c.signDate; }).filter(Boolean).sort()[0] || '';
 
   const todayStr = nycTodayStr();
@@ -2089,7 +2095,7 @@ function contractSummary(contracts){
   // shows something, still flagged red).
   const upcoming = liveExpirations.filter(function(d){ return d >= todayStr; });
   const nextRenewal = upcoming.length ? upcoming[0] : (liveExpirations[liveExpirations.length-1] || '');
-  return {totalSidekicks:totalSidekicks, totalPro:totalPro+totalLegacy, totalMax:totalMax, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
+  return {totalSidekicks:totalSidekicks, totalPro:totalPro+totalLegacy, totalMax:totalMax, totalValueExTax:totalValueExTax, totalValueIncTax:totalValueIncTax, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
 }
 
 function surveyBonusPoints(score){
@@ -2881,6 +2887,7 @@ const LEADERBOARD_COLUMNS = [
   {key:'currentQ', label:'Current Q', get:function(r){ return currentQSortValue(r.currentQInfo); }},
   {key:'sidekicks', label:'Total Sidekicks', get:function(r){ return r.cs.totalSidekicks||0; }},
   {key:'contracts', label:'# Contracts', get:function(r){ return r.cs.count||0; }},
+  {key:'tcv', label:'TCV excl. tax (incl. tax)', get:function(r){ return r.cs.totalValueExTax||0; }},
   {key:'contractDocType', label:'ToS doc type', get:function(r){ return r.overarchingDocTypeLabel.toLowerCase(); }},
   {key:'firstSigned', label:'First signed', get:function(r){ return r.cs.firstSigned||''; }},
   {key:'firstShipped', label:'First shipped', get:function(r){ return r.c0.shippedDate||''; }},
@@ -2968,6 +2975,7 @@ async function renderLeaderboard(){
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
     const renewalOverdue = isRenewalOverdue(r.cs.nextRenewal);
     const contractCountCell = r.cs.count + (r.cs.openCount !== r.cs.count ? ' ('+r.cs.openCount+' open)' : '');
+    const tcvCell = (r.cs.totalValueExTax || r.cs.totalValueIncTax) ? '$'+fmtMoney(r.cs.totalValueExTax)+' ($'+fmtMoney(r.cs.totalValueIncTax)+')' : '—';
     const customerLink = '<span data-goto-customer="'+escAttr(r.name)+'" style="cursor:pointer;color:var(--eg);border-bottom:1px dotted var(--eg);">'+escAttr(r.name)+'</span>';
     const downtimeCount = r.ongoingDowntimeEvents.length;
     const downtimeExpanded = !!leaderboardDowntimeExpanded[r.name];
@@ -2977,6 +2985,7 @@ async function renderLeaderboard(){
     html += '<tr class="'+(r.name===currentCustomer?'this-customer':'')+'"><td class="rank">'+(i+1)+'</td><td>'+customerLink+'</td><td>'+typeCell+'</td><td>'+tierCell+'</td><td>'+downtimeCell+'</td><td>'+currentQCell+'</td>'+
       '<td class="num">'+(r.cs.totalSidekicks?r.cs.totalSidekicks+' <span style="color:var(--ink-soft);font-size:10.5px;">('+r.cs.totalPro+'P/'+r.cs.totalMax+'M)</span>':'—')+'</td>'+
       '<td class="num">'+contractCountCell+'</td>'+
+      '<td class="num">'+tcvCell+'</td>'+
       '<td class="num">'+(r.tosContractUrl ? '<a href="'+escAttr(r.tosContractUrl)+'" target="_blank" rel="noopener">'+escAttr(r.overarchingDocTypeLabel)+'</a>' : escAttr(r.overarchingDocTypeLabel))+'</td>'+
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
@@ -3508,6 +3517,10 @@ function renderContracts(){
         '<div class="renewal-line"><label style="display:flex;align-items:center;gap:6px;text-transform:none;font-family:\'IBM Plex Sans\',sans-serif;font-size:12.5px;color:var(--ink);letter-spacing:normal;"><input type="checkbox" data-contract-index="'+i+'" data-field="partiallyShipped" '+(c.partiallyShipped?'checked':'')+' '+disabledAttr+' style="width:auto;"> Only some units shipped so far — still counts as Awaiting shipment</label></div>'
       ) : '')+
       '<div class="contract-sub-row">'+
+        '<div class="info-field"><label>Contract value (excl. tax)</label><input type="number" min="0" step="0.01" data-contract-index="'+i+'" data-field="valueExTax" value="'+escAttr(c.valueExTax)+'" placeholder="0.00" '+disabledAttr+'></div>'+
+        '<div class="info-field"><label>Contract value (incl. tax)</label><input type="number" min="0" step="0.01" data-contract-index="'+i+'" data-field="valueIncTax" value="'+escAttr(c.valueIncTax)+'" placeholder="0.00" '+disabledAttr+'></div>'+
+      '</div>'+
+      '<div class="contract-sub-row">'+
         '<div class="info-field"><label>UPS tracking #</label><input type="text" data-contract-index="'+i+'" data-field="shippingId" value="'+escAttr(c.shippingId)+'" placeholder="1Z..." '+disabledAttr+'></div>'+
         (c.shippingId ? '<a class="track-link" href="https://www.ups.com/track?tracknum='+encodeURIComponent(c.shippingId)+'" target="_blank" rel="noopener">Track on UPS →</a>' : '')+
         '<div class="info-field"><label>Expected delivery</label><input type="date" data-contract-index="'+i+'" data-field="expectedDelivery" value="'+(c.expectedDelivery||'')+'" '+disabledAttr+'></div>'+
@@ -3753,7 +3766,7 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   const idx = parseInt(e.target.dataset.contractIndex, 10);
   const field = e.target.dataset.field;
   state.info.contracts[idx][field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  if(field==='quantityPro' || field==='quantityMax' || field==='partiallyShipped'){ scheduleSave(); return; }
+  if(field==='quantityPro' || field==='quantityMax' || field==='partiallyShipped' || field==='valueExTax' || field==='valueIncTax'){ scheduleSave(); return; }
   if(field==='expectedDelivery' || field==='actualDelivery' || field==='contractDocType'){
     if(document.querySelector('.tab.active').dataset.panel === 'activity') renderActivity();
     scheduleSave();
