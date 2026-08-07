@@ -934,7 +934,7 @@ function emptyContract(){
   return {id:genContractId(), quantityPro:'', quantityMax:'', signDate:'', shippedDate:'', installDate:'', expirationDate:'', type:'', renewsContractId:'', partiallyShipped:false, shippingId:'', expectedDelivery:'', actualDelivery:'', contractUrl:'', contractDocType:'', isOverarchingTos:false, valueExTax:'', valueIncTax:''};
 }
 function defaultCustomerState(){
-  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}, downtimeEvents:[]};
+  return {info:{customerType:'', onboardingMeetingDate:'', firstFlagDate:'', checkinDate:'', survey1SentDate:'', survey1SupportScore:'', dashboardFirstActionDate:'', touchpointPlays:{}, contracts:[emptyContract()], taskOverrides:{}, manualTasks:[]}, deliveries:{}, bonusLog:{q1:[], q2:[], q3:[], q4:[]}, downtimeEvents:[], tierSnapshots:{}};
 }
 function contract0(){
   return (state.info.contracts && state.info.contracts[0]) || emptyContract();
@@ -2263,6 +2263,45 @@ function quarterHasStarted(year, q, qInfo){
   return QUARTER_ORDER[q] <= QUARTER_ORDER[qInfo.q];
 }
 
+// Tier movement is tracked per customer-tenure quarter (Y1 Q1, Y1 Q2, ...),
+// the same "quarter" already used for scoring/Current Q — not the calendar
+// quarter. Each render snapshots the customer's current tier under their
+// current tenure-quarter key; once tenure moves past that quarter the key
+// stops being written and becomes a frozen historical record, so comparing
+// against the immediately preceding key tells us whether tier moved.
+function tenureQuarterKey(year, q){
+  return year+'_'+q;
+}
+function prevTenureQuarterKey(qInfo){
+  if(!qInfo || qInfo.special === 'first30') return null;
+  const order = ['q1','q2','q3','q4'];
+  const idx = order.indexOf(qInfo.q);
+  if(idx > 0) return tenureQuarterKey(qInfo.year, order[idx-1]);
+  if(qInfo.year > 1) return tenureQuarterKey(qInfo.year-1, 'q4');
+  return null;
+}
+// Persists the current tier under the current tenure-quarter key (if not
+// already recorded, or the score has moved within the still-open quarter),
+// then returns 'up'/'down'/null vs. the immediately preceding quarter's
+// recorded tier. Writes silently via window.storage (like the other
+// background migrations in this file) rather than saveCustomerState, so
+// browsing the leaderboard doesn't flash the save-status indicator.
+async function tierMovementArrow(customerName, s, qInfo, tier){
+  if(!qInfo || qInfo.special === 'first30') return null;
+  const key = tenureQuarterKey(qInfo.year, qInfo.q);
+  if(!s.tierSnapshots) s.tierSnapshots = {};
+  if(s.tierSnapshots[key] !== tier.key){
+    s.tierSnapshots[key] = tier.key;
+    try{ await window.storage.set(customerStorageKey(customerName), JSON.stringify(s)); }catch(e){}
+  }
+  const prevKey = prevTenureQuarterKey(qInfo);
+  const prevTierKey = prevKey ? s.tierSnapshots[prevKey] : null;
+  if(!prevTierKey || prevTierKey === tier.key) return null;
+  const prevTier = TIERS.find(function(t){ return t.key === prevTierKey; });
+  if(!prevTier) return null;
+  return tier.min > prevTier.min ? 'up' : 'down';
+}
+
 function isRenewalOverdue(dateStr){
   if(!dateStr) return false;
   return dateStr < nycTodayStr();
@@ -2414,6 +2453,30 @@ function lastWinInfo(bonusLog){
       if(!entry.date) return;
       if(NON_WIN_MS_IDS.indexOf(entry.msId) !== -1) return;
       if(!best || entry.date > best.date) best = entry;
+    });
+  });
+  return best;
+}
+
+// The "Last meeting date" leaderboard column is the most recent of: the
+// onboarding meeting, the post-install check-in, and every ad-hoc meeting
+// logged via the Activity tab's "+ Log meeting" button (msId
+// 'ms-meeting') — whichever of those actually happened most recently. A
+// date still in the future (e.g. a check-in that's only scheduled, not
+// yet held) doesn't count as a meeting that's happened.
+function lastMeetingInfo(s){
+  const today = nycTodayStr();
+  let best = null;
+  function consider(date, label){
+    if(!date || date > today) return;
+    if(!best || date > best.date) best = {date:date, label:label};
+  }
+  consider(s.info && s.info.onboardingMeetingDate, 'Onboarding meeting');
+  consider(s.info && s.info.checkinDate, 'Post-install check-in');
+  Object.keys(s.bonusLog||{}).forEach(function(q){
+    (s.bonusLog[q]||[]).forEach(function(entry){
+      if(entry.msId !== 'ms-meeting') return;
+      consider(entry.date, entry.notes || 'Meeting logged');
     });
   });
   return best;
@@ -2898,11 +2961,8 @@ const LEADERBOARD_COLUMNS = [
   {key:'firstSigned', label:'First signed', get:function(r){ return r.cs.firstSigned||''; }},
   {key:'firstShipped', label:'First shipped', get:function(r){ return r.c0.shippedDate||''; }},
   {key:'firstInstall', label:'First install', get:function(r){ return r.c0.installDate||''; }},
-  {key:'onboarding', label:'Onboarding', get:function(r){ return r.info.onboardingMeetingDate||''; }},
   {key:'firstFlag', label:'First flag', get:function(r){ return r.info.firstFlagDate||''; }},
-  {key:'checkin', label:'Check-in', get:function(r){ return r.info.checkinDate||''; }},
-  {key:'survey1', label:'Survey #1', get:function(r){ return r.info.survey1SentDate||''; }},
-  {key:'survey1score', label:'Survey #1 score', get:function(r){ return parseInt(r.info.survey1SupportScore,10)||0; }},
+  {key:'checkin', label:'Last meeting date', get:function(r){ return (r.lastMeeting&&r.lastMeeting.date)||''; }},
   {key:'nextRenewal', label:'Next renewal', get:function(r){ return r.cs.nextRenewal||''; }},
   {key:'lastWin', label:'Last win', get:function(r){ return (r.lastWin&&r.lastWin.date)||''; }},
   {key:'delivery', label:'Delivery / Max', get:function(r){ return r.delivery; }},
@@ -2944,10 +3004,12 @@ async function renderLeaderboard(){
     const m = scoringQ ? maxDeliveryForQuarter(scoringYear, scoringQ) : 0;
     const em = scoringQ ? effectiveMaxForQuarter(scoringYear, scoringQ) : 0;
     const lastWin = lastWinInfo(s.bonusLog || {});
+    const lastMeeting = lastMeetingInfo(s);
     state = savedState;
     const total = d + sb;
     const pct = em > 0 ? Math.round((total/em)*100) : 0;
     const tier = tierFor(pct);
+    const tierArrow = await tierMovementArrow(name, s, currentQInfo, tier);
     const cs = contractSummary(s.info.contracts);
     const c0 = (s.info.contracts && s.info.contracts[0]) || {};
     const activeContract = hasActiveContract(s.info.contracts);
@@ -2955,7 +3017,7 @@ async function renderLeaderboard(){
     const tosContract = overarchingTosContract(s.info.contracts);
     const overarchingDocTypeLabelStr = overarchingDocTypeLabel(tosContract);
     const ongoingDowntimeEvents = (s.downtimeEvents || []).filter(function(e){ return e.status === 'ongoing'; });
-    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, info:s.info||{}, lastWin:lastWin, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr, tosContractUrl:(tosContract&&tosContract.contractUrl)||'', ongoingDowntimeEvents:ongoingDowntimeEvents};
+    return {name:name, delivery:d, bonus:b, scoredBonus:sb, max:m, total:total, pct:pct, tier:tier, tierArrow:tierArrow, info:s.info||{}, lastWin:lastWin, lastMeeting:lastMeeting, cs:cs, c0:c0, currentQInfo:currentQInfo, activeContract:activeContract, awaitingShipment:awaitingShipment, overarchingDocTypeLabel:overarchingDocTypeLabelStr, tosContractUrl:(tosContract&&tosContract.contractUrl)||'', ongoingDowntimeEvents:ongoingDowntimeEvents};
   }));
 
   const sortCol = LEADERBOARD_COLUMNS.find(function(c){ return c.key === leaderboardSort.key; }) || LEADERBOARD_COLUMNS[LEADERBOARD_COLUMNS.length-1];
@@ -2975,7 +3037,8 @@ async function renderLeaderboard(){
   rows.forEach(function(r, i){
     const typeKey = r.info.customerType;
     const typeCell = typeKey ? '<span class="tier-badge" style="background:'+CUSTOMER_TYPE_COLOR[typeKey]+';color:#1B2430;font-size:9.5px;padding:3px 8px;">'+CUSTOMER_TYPE_LABEL[typeKey]+'</span>' : '—';
-    const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>'+
+    const tierArrowCell = r.tierArrow ? ' <span title="Tier moved '+r.tierArrow+' from last quarter" style="color:'+(r.tierArrow==='up'?'var(--t-strong)':'var(--t-warmup)')+';font-weight:700;">'+(r.tierArrow==='up'?'▲':'▼')+'</span>' : '';
+    const tierCell = '<span class="tier-badge" style="background:'+r.tier.color+';font-size:9.5px;padding:3px 8px;">'+r.tier.label+'</span>'+tierArrowCell+
       (r.activeContract ? '' : ' <span class="tier-badge" style="background:#334155;font-size:9.5px;padding:3px 8px;">No contract</span>')+
       (r.awaitingShipment ? ' <span style="color:#2F6FED;font-weight:600;font-size:11px;">Awaiting shipment</span>' : '');
     const currentQCell = quarterBadgeHtml(r.currentQInfo);
@@ -2996,11 +3059,8 @@ async function renderLeaderboard(){
       '<td class="num">'+(r.cs.firstSigned||'—')+'</td>'+
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
-      '<td class="num">'+(r.info.onboardingMeetingDate||'—')+'</td>'+
       '<td class="num">'+(r.info.firstFlagDate||'—')+'</td>'+
-      '<td class="num">'+(r.info.checkinDate||'—')+'</td>'+
-      '<td class="num">'+(r.info.survey1SentDate||'—')+'</td>'+
-      '<td class="num">'+(r.info.survey1SupportScore||'—')+'</td>'+
+      '<td class="num">'+(r.lastMeeting ? r.lastMeeting.date : '—')+'</td>'+
       '<td class="num'+(renewalOverdue?' overdue':'')+'">'+(r.cs.nextRenewal||'—')+'</td>'+
       '<td class="num">'+(lastWinCell(r.lastWin))+'</td>'+
       '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.scoredBonus+(r.bonus>r.scoredBonus?' <span style="color:var(--ink-soft);font-size:10.5px;">(of +'+r.bonus+')</span>':'')+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
