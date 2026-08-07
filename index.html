@@ -2104,6 +2104,43 @@ function contractSummary(contracts){
   return {totalSidekicks:totalSidekicks, totalPro:totalPro+totalLegacy, totalMax:totalMax, totalValueExTax:totalValueExTax, totalValueIncTax:totalValueIncTax, hasValueEntered:hasValueEntered, firstSigned:firstSigned, nextRenewal:nextRenewal, count:contracts.length, openCount:openContracts.length};
 }
 
+// Expansion/addition contracts should always have a matching +20
+// "Expansion order placed" bonus log entry — logging the contract itself is
+// enough, it shouldn't also require separately re-logging it in the Wins &
+// Bonus Log. Safe to call repeatedly (on every contract edit, and once as a
+// backfill across existing customers): entries this function adds are
+// tagged with the contract's own id, and it also treats any pre-existing
+// manual 'ms-expansion' entry dated the same as the contract's sign date as
+// already covering that contract — so re-running never creates a second
+// +20 for the same expansion.
+function autoLogExpansionBonus(s){
+  const contracts = (s.info && s.info.contracts) || [];
+  const cs = contractSummary(contracts);
+  const bonusLog = s.bonusLog || (s.bonusLog = {q1:[], q2:[], q3:[], q4:[]});
+  const loggedContractIds = {}, loggedDates = {};
+  Object.keys(bonusLog).forEach(function(q){
+    (bonusLog[q]||[]).forEach(function(entry){
+      if(entry.autoExpansionContractId) loggedContractIds[entry.autoExpansionContractId] = true;
+      if(entry.msId === 'ms-expansion' && entry.date) loggedDates[entry.date] = true;
+    });
+  });
+  let added = 0;
+  contracts.forEach(function(c){
+    if(c.type !== 'addition' || !c.signDate) return;
+    if(loggedContractIds[c.id] || loggedDates[c.signDate]) return;
+    const month = monthNumberForDate(c.signDate, cs.firstSigned);
+    if(month === null) return;
+    const ms = MILESTONES.find(function(m){ return m.id === 'ms-expansion'; });
+    const q = quarterForMonth(month);
+    const year = yearForMonth(month);
+    if(!bonusLog[q]) bonusLog[q] = [];
+    bonusLog[q].push({id:'fb-'+Date.now()+'-'+Math.random().toString(36).slice(2,7), msId:'ms-expansion', points:ms.points, month:month, year:year, date:c.signDate, notes:'Auto-logged from expansion contract', category:'', ts:Date.now(), autoExpansionContractId:c.id});
+    loggedDates[c.signDate] = true;
+    added++;
+  });
+  return added;
+}
+
 function surveyBonusPoints(score){
   const n = parseInt(score, 10);
   if(n === 5) return 5;
@@ -3658,6 +3695,28 @@ async function backfillCustomFeedbackCategoriesOnce(){
   await saveCustomFeedbackCategories(CUSTOM_FEEDBACK_CATEGORIES);
   await window.storage.set('pep-custom-feedback-categories-backfilled', 'true');
 }
+// One-time backfill for expansion/addition contracts logged before
+// autoLogExpansionBonus existed (or added while offline/read-only, where the
+// live-edit hooks never got to run) — scans every customer once, gated the
+// same way as the feedback-category backfill above, and logs any missing
+// +20 "Expansion order placed" entries.
+async function backfillExpansionBonusOnce(){
+  try{
+    const flag = await window.storage.get('pep-expansion-bonus-backfilled').catch(function(){ return null; });
+    if(flag) return;
+  }catch(e){}
+  const list = await loadCustomersList();
+  const liveState = state, liveCustomer = currentCustomer;
+  await Promise.all(list.map(async function(name){
+    const isLive = name === liveCustomer;
+    const s = isLive ? liveState : await loadCustomerState(name);
+    const added = autoLogExpansionBonus(s);
+    if(!added) return;
+    if(isLive) scheduleSave();
+    else await window.storage.set(customerStorageKey(name), JSON.stringify(s)).catch(function(){});
+  }));
+  await window.storage.set('pep-expansion-bonus-backfilled', 'true');
+}
 function customerStorageKey(name){
   const slug = (name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return 'pep-customer:'+(slug || 'customer');
@@ -3778,12 +3837,15 @@ document.getElementById('customer-select').addEventListener('change', async func
 
 function afterDateEdit(){
   const changed = runAutoscore();
+  const expansionAdded = autoLogExpansionBonus(state);
   renderCadence();
   const activePanel = document.querySelector('.tab.active').dataset.panel;
   if(activePanel === 'scorecard') renderScorecard();
   if(activePanel === 'activity') renderActivity();
+  if(activePanel === 'milestones') renderMilestones();
   if(activePanel === 'deployment-health') renderDeploymentHealth();
-  if(changed) flashSaveStatus('autoscored '+changed+' task'+(changed===1?'':'s'));
+  if(expansionAdded) flashSaveStatus('logged +20 for '+expansionAdded+' expansion contract'+(expansionAdded===1?'':'s'));
+  else if(changed) flashSaveStatus('autoscored '+changed+' task'+(changed===1?'':'s'));
   scheduleSave();
 }
 
@@ -3852,8 +3914,13 @@ document.getElementById('contracts-list').addEventListener('change', function(e)
   }
   if(field==='type' || field==='renewsContractId'){
     if(field==='type' && e.target.value !== 'renewal'){ state.info.contracts[idx].renewsContractId = ''; }
+    const expansionAdded = autoLogExpansionBonus(state);
     renderContracts();
-    if(document.querySelector('.tab.active').dataset.panel === 'scorecard') renderScorecard();
+    const activePanel = document.querySelector('.tab.active').dataset.panel;
+    if(activePanel === 'scorecard') renderScorecard();
+    if(activePanel === 'milestones') renderMilestones();
+    if(activePanel === 'activity') renderActivity();
+    if(expansionAdded) flashSaveStatus('logged +20 for '+expansionAdded+' expansion contract'+(expansionAdded===1?'':'s'));
     scheduleSave();
     return;
   }
@@ -4482,6 +4549,11 @@ window.pepAppInit = async function(){
   backfillCustomFeedbackCategoriesOnce().then(function(){
     const activeTab = document.querySelector('.tab.active');
     if(activeTab && activeTab.dataset.panel === 'milestones') renderMilestones();
+  });
+  backfillExpansionBonusOnce().then(function(){
+    const activeTab = document.querySelector('.tab.active');
+    if(activeTab && activeTab.dataset.panel === 'milestones') renderMilestones();
+    if(activeTab && activeTab.dataset.panel === 'leaderboard') renderLeaderboard();
   });
   // All Customers is the default active panel now, but renderAll() doesn't
   // render it (it's only ever rendered on-demand via the tab click handler).
