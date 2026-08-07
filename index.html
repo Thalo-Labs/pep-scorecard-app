@@ -1727,6 +1727,7 @@ function twClassifyEntry(e){
   if(e.msId && TW_MS_SENTIMENT[e.msId]) return TW_MS_SENTIMENT[e.msId];
   if(e.label.indexOf('Downtime started') === 0) return 'red';
   if(e.label.indexOf('Downtime resolved') === 0) return 'green';
+  if(e.label.indexOf('Contract') === 0 && e.label.indexOf('signed') !== -1) return 'green';
   if(e.label.indexOf('Contract') === 0 && e.label.indexOf('expires') !== -1) return 'red';
   return 'gray';
 }
