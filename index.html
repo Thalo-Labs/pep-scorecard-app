@@ -3700,22 +3700,33 @@ async function backfillCustomFeedbackCategoriesOnce(){
 // live-edit hooks never got to run) — scans every customer once, gated the
 // same way as the feedback-category backfill above, and logs any missing
 // +20 "Expansion order placed" entries.
+//
+// Writes MUST run one at a time here, not via Promise.all. window.storage
+// (the GitHub-backed shim) keeps every customer in one shared JSON blob
+// with sha-based optimistic locking (see installGithubStorageShim's set()):
+// firing N concurrent .set() calls races on that sha, and a write that
+// loses the race — and then loses its one built-in conflict retry too —
+// drops silently with no error surfaced anywhere. That's exactly what
+// happened the first time this ran across ~26 customers at once: the
+// backfill "completed" and set its done-flag, but at least one customer's
+// entry never actually made it to storage. Flag key is versioned (-v2) so
+// this corrected pass runs fresh instead of staying gated off by that
+// earlier incomplete run's flag.
 async function backfillExpansionBonusOnce(){
   try{
-    const flag = await window.storage.get('pep-expansion-bonus-backfilled').catch(function(){ return null; });
+    const flag = await window.storage.get('pep-expansion-bonus-backfilled-v2').catch(function(){ return null; });
     if(flag) return;
   }catch(e){}
   const list = await loadCustomersList();
   const liveState = state, liveCustomer = currentCustomer;
-  await Promise.all(list.map(async function(name){
+  for(const name of list){
     const isLive = name === liveCustomer;
     const s = isLive ? liveState : await loadCustomerState(name);
     const added = autoLogExpansionBonus(s);
-    if(!added) return;
-    if(isLive) scheduleSave();
-    else await window.storage.set(customerStorageKey(name), JSON.stringify(s)).catch(function(){});
-  }));
-  await window.storage.set('pep-expansion-bonus-backfilled', 'true');
+    if(!added) continue;
+    await saveCustomerState(name, s);
+  }
+  await window.storage.set('pep-expansion-bonus-backfilled-v2', 'true');
 }
 function customerStorageKey(name){
   const slug = (name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
