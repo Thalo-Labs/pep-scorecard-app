@@ -324,6 +324,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
       <option value="auto-hvac-user">Auto HVAC User</option>
       <option value="bundled-resi">Bundled Resi</option>
     </select>
+    <button id="manual-save-btn" type="button">Save now</button>
     <span id="save-status"></span>
   </div>
 
@@ -3962,6 +3963,10 @@ document.getElementById('add-contract-btn').addEventListener('click', function()
   renderContracts();
   if(document.querySelector('.tab.active').dataset.panel === 'activity') renderActivity();
   scheduleSave();
+});
+document.getElementById('manual-save-btn').addEventListener('click', async function(){
+  if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
+  await flushSave();
 });
 document.getElementById('autoscore-btn').addEventListener('click', function(){
   if(!currentCustomer){ flashSaveStatus('pick a customer first'); return; }
