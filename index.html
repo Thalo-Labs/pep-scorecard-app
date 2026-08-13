@@ -2519,6 +2519,16 @@ function lastMeetingInfo(s){
   return best;
 }
 
+// Flags a stale last-meeting date on the leaderboard: Core ICP accounts get
+// touched more often, so they go stale at 2 weeks vs. 4 weeks for everyone
+// else.
+function isLastMeetingStale(lastMeeting, customerType){
+  if(!lastMeeting || !lastMeeting.date) return false;
+  const days = daysBetween(lastMeeting.date, nycTodayStr());
+  const thresholdDays = ICP_SEGMENTS.indexOf(customerType) !== -1 ? 14 : 28;
+  return days !== null && days > thresholdDays;
+}
+
 function lastWinCell(entry){
   if(!entry) return '—';
   const ms = MILESTONES.find(function(m){ return m.id===entry.msId; });
@@ -3101,7 +3111,7 @@ async function renderLeaderboard(){
       '<td class="num">'+(r.c0.shippedDate||'—')+'</td>'+
       '<td class="num">'+(r.c0.installDate||'—')+'</td>'+
       '<td class="num">'+(r.info.firstFlagDate||'—')+'</td>'+
-      '<td class="num">'+(r.lastMeeting ? r.lastMeeting.date : '—')+'</td>'+
+      '<td class="num'+(isLastMeetingStale(r.lastMeeting, typeKey)?' overdue':'')+'">'+(r.lastMeeting ? r.lastMeeting.date : '—')+'</td>'+
       '<td class="num'+(renewalOverdue?' overdue':'')+'">'+(r.cs.nextRenewal||'—')+'</td>'+
       '<td class="num">'+(lastWinCell(r.lastWin))+'</td>'+
       '<td class="num">'+r.delivery+' / '+r.max+'</td><td class="num">+'+r.scoredBonus+(r.bonus>r.scoredBonus?' <span style="color:var(--ink-soft);font-size:10.5px;">(of +'+r.bonus+')</span>':'')+'</td><td class="num">'+r.total+'</td><td class="num">'+r.pct+'%</td></tr>';
