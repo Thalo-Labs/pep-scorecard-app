@@ -243,6 +243,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 .footprint-line{font-size:15px;font-weight:600;margin:0 0 2px;color:var(--ink);}
 .footprint-line b{font-weight:700;}
 .footprint-asof{font-size:11.5px;color:var(--ink-soft);margin:0 0 12px;}
+.footprint-date-select{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:#fff;}
 .footprint-map-row{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;}
 .footprint-map-svg-wrap{position:relative;width:min(560px,100%);}
 .footprint-map-svg-wrap svg{width:100%;height:auto;display:block;}
@@ -269,7 +270,7 @@ table.dh-metrics tr:last-child td{border-bottom:none;}
 
   <div class="footprint-block" id="footprintBlock" style="display:none;">
     <p class="footprint-line" id="footprintLine"></p>
-    <p class="footprint-asof" id="footprintAsOf"></p>
+    <p class="footprint-asof">As of <select id="footprintDateSelect" class="footprint-date-select"></select></p>
     <div class="footprint-map-row">
       <div class="footprint-map-svg-wrap">
         <svg id="footprintMap" viewBox="0 0 930 590" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -4468,12 +4469,19 @@ function footprintBucketFor(count, metric){
 
 let lastFootprint = null;
 let footprintMetric = 'sites';
+let footprintHistory = [];
+let selectedFootprintDate = null;
 
-async function loadDeploymentFootprint(){
+// deploymentFootprintHistory is a list of dated snapshots (oldest first) --
+// each update to the deployment footprint numbers should append a new
+// dated entry rather than overwrite, so the map can look back at any
+// past snapshot instead of only ever showing the latest one.
+async function loadDeploymentFootprintHistory(){
   try{
-    const res = await window.storage.get('deploymentFootprint');
-    return JSON.parse(res.value);
-  }catch(e){ return null; }
+    const res = await window.storage.get('deploymentFootprintHistory');
+    const list = JSON.parse(res.value);
+    return (list||[]).slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }catch(e){ return []; }
 }
 
 function footprintCountFor(code, metric){
@@ -4548,18 +4556,37 @@ function wireFootprintMetricToggle(){
   });
 }
 
-async function renderDeploymentFootprint(){
-  const fp = await loadDeploymentFootprint();
-  if(!fp) return;
+function renderFootprintSnapshot(fp){
   lastFootprint = fp;
   const states = fp.states || [];
   const installsLabel = fp.totalInstalls != null ? fp.totalInstalls : '\u2014';
   document.getElementById('footprintLine').innerHTML =
     '<b>' + installsLabel + '</b> Sidekicks deployed with <b>' + fp.totalOrganizations + '</b> customers at <b>' + fp.totalLocations + '</b> sites across <b>' + states.length + '</b> states';
-  document.getElementById('footprintAsOf').textContent = fp.lastUpdated ? 'As of ' + fp.lastUpdated : '';
-  wireFootprintMetricToggle();
   renderFootprintMap();
   renderFootprintLegend();
+}
+
+function onFootprintDateChange(e){
+  selectedFootprintDate = e.target.value;
+  const fp = footprintHistory.find(function(h){ return h.date === selectedFootprintDate; });
+  if(fp) renderFootprintSnapshot(fp);
+}
+
+async function renderDeploymentFootprint(){
+  footprintHistory = await loadDeploymentFootprintHistory();
+  if(!footprintHistory.length) return;
+  const latest = footprintHistory[footprintHistory.length-1];
+  if(!selectedFootprintDate || !footprintHistory.some(function(h){ return h.date === selectedFootprintDate; })){
+    selectedFootprintDate = latest.date;
+  }
+  const sel = document.getElementById('footprintDateSelect');
+  sel.innerHTML = footprintHistory.slice().reverse().map(function(h){
+    return '<option value="' + escAttr(h.date) + '"' + (h.date===selectedFootprintDate?' selected':'') + '>' + escAttr(h.date) + '</option>';
+  }).join('');
+  sel.onchange = onFootprintDateChange;
+  const fp = footprintHistory.find(function(h){ return h.date === selectedFootprintDate; }) || latest;
+  renderFootprintSnapshot(fp);
+  wireFootprintMetricToggle();
   document.getElementById('footprintBlock').style.display = '';
 }
 
